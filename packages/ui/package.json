@@ -18,12 +18,14 @@
     "@reader/adapters": "workspace:*",
     "@reader/book-scanner": "workspace:*",
     "@reader/converters": "workspace:*",
-    "@reader/network": "workspace:*"
+    "@reader/network": "workspace:*",
+    "qrcode": "^1.5.4"
   },
   "peerDependencies": {
     "svelte": "^5.0.0"
   },
   "devDependencies": {
+    "@types/qrcode": "^1.5.5",
     "svelte": "^5.16.0",
     "typescript": "^5.7.2"
   }

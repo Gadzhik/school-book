@@ -32,7 +32,32 @@
   import BookUpload from './BookUpload.svelte';
   import AssignmentsScreen from './AssignmentsScreen.svelte';
   import AdminPanel from './AdminPanel.svelte';
+  import QrCode from '../components/QrCode.svelte';
   import Icon from '../components/Icon.svelte';
+
+  let showShare = $state(false);
+  let copied = $state(false);
+
+  // Адрес для подключения других устройств (из /status сервера).
+  const shareUrl = $derived.by(() => {
+    const st = $serverStatus;
+    const conn = $connection;
+    if (!st?.address || !st?.port) return '';
+    if (conn?.token) {
+      return `chitalka://pair?addr=${st.address}&port=${st.port}&token=${encodeURIComponent(conn.token)}`;
+    }
+    return `http://${st.address}:${st.port}`;
+  });
+
+  async function copyShare() {
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      copied = true;
+      setTimeout(() => (copied = false), 1500);
+    } catch {
+      /* буфер недоступен */
+    }
+  }
 
   let showApprovals = $state(false);
   let showUpload = $state(false);
@@ -257,6 +282,11 @@
         <strong>{$serverStatus.name ?? 'Сервер'}</strong>
         <span class="muted">книг: {$serverStatus.books ?? '—'}</span>
         <button class="ghost" onclick={() => openCatalog()}>Обновить</button>
+        {#if shareUrl}
+          <button class="ghost" onclick={() => (showShare = !showShare)}>
+            {showShare ? 'Скрыть адрес' : 'Поделиться доступом'}
+          </button>
+        {/if}
         {#if $session && $session.user.status === 'active'}
           <button class="ghost" onclick={doSyncWords} disabled={wordsSyncing}>
             {wordsSyncing ? 'Синхронизация…' : 'Синхронизировать слова'}
@@ -315,6 +345,18 @@
       {/if}
       {#if $session && $session.user.status === 'active' && canAudit($session.user.role) && showAdmin}
         <AdminPanel />
+      {/if}
+
+      {#if showShare && shareUrl}
+        <div class="share">
+          <div class="share-info">
+            <p class="muted">Адрес для подключения других устройств:</p>
+            <code class="share-url">{shareUrl}</code>
+            <button class="ghost sm" onclick={copyShare}>{copied ? 'Скопировано ✓' : 'Копировать'}</button>
+            <p class="muted">Откройте «Сервер» на другом устройстве и отсканируйте QR или введите адрес.</p>
+          </div>
+          <QrCode value={shareUrl} size={160} />
+        </div>
       {/if}
 
       {#if wordsMsg}<p class="muted">{wordsMsg}</p>{/if}
@@ -509,6 +551,31 @@
     height: 10px;
     border-radius: 50%;
     background: #2ecc71;
+  }
+  .share {
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+    flex-wrap: wrap;
+    padding: 0.8rem 0.9rem;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--surface);
+    margin-bottom: 1rem;
+  }
+  .share-info {
+    flex: 1;
+    min-width: 220px;
+  }
+  .share-url {
+    display: block;
+    word-break: break-all;
+    background: var(--bg);
+    padding: 0.4rem 0.5rem;
+    border-radius: 6px;
+    margin: 0.3rem 0;
+    font-size: 0.85rem;
+    color: var(--text);
   }
   .user-bar {
     display: flex;
