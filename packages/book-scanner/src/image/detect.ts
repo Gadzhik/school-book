@@ -27,45 +27,68 @@ let cvPromise: Promise<CvLike> | null = null;
 function loadOpenCv(): Promise<CvLike> {
   if (cvPromise) return cvPromise;
   cvPromise = new Promise<CvLike>((resolve, reject) => {
-    const g = globalThis as unknown as { cv?: CvLike };
-    // Уже загружен и инициализирован.
-    if (g.cv && (g.cv as CvLike).Mat) {
-      resolve(g.cv);
-      return;
-    }
-    const ready = () => {
-      const cv = (globalThis as unknown as { cv?: CvLike }).cv;
-      if (cv && cv.Mat) resolve(cv);
-      else reject(new Error('OpenCV загрузился, но runtime не готов'));
+    // OpenCV.js (Emscripten) инициализирует wasm асинхронно. Сигнал готовности —
+    // появление cv.Mat. Колбэк onRuntimeInitialized иногда не срабатывает
+    // (race/уже инициализирован), поэтому НАДЁЖНО опрашиваем cv.Mat + таймаут,
+    // чтобы добавление страницы не зависало навсегда.
+    const TIMEOUT_MS = 20000;
+    const getCv = () => (globalThis as unknown as { cv?: CvLike }).cv;
+    let done = false;
+    const finish = (cv?: CvLike, err?: Error) => {
+      if (done) return;
+      done = true;
+      clearInterval(poll);
+      clearTimeout(timer);
+      if (cv) resolve(cv);
+      else reject(err ?? new Error('OpenCV не готов'));
     };
-    const existing = document.querySelector<HTMLScriptElement>(
-      `script[data-opencv]`,
+    const poll = setInterval(() => {
+      const cv = getCv();
+      if (cv && cv.Mat) finish(cv);
+    }, 50);
+    const timer = setTimeout(
+      () => finish(undefined, new Error('OpenCV не инициализировался вовремя')),
+      TIMEOUT_MS,
     );
-    const onScript = (cv: CvLike) => {
-      // OpenCV.js инициализирует wasm асинхронно после загрузки скрипта.
-      if (cv.Mat) ready();
-      else cv.onRuntimeInitialized = ready;
-    };
-    if (existing) {
-      const cv = (globalThis as unknown as { cv?: CvLike }).cv;
-      if (cv) onScript(cv);
-      else existing.addEventListener('load', () => {
-        const c = (globalThis as unknown as { cv?: CvLike }).cv;
-        if (c) onScript(c);
-        else reject(new Error('OpenCV не определил глобальный cv'));
-      });
+
+    // Уже готов.
+    const cur = getCv();
+    if (cur && cur.Mat) {
+      finish(cur);
       return;
     }
+    // Доп. сигнал к поллингу, если cv уже есть.
+    const hook = () => {
+      const cv = getCv();
+      if (cv && cv.Mat) finish(cv);
+    };
+    if (cur) {
+      try {
+        cur.onRuntimeInitialized = hook;
+      } catch {
+        /* поллинг подхватит */
+      }
+    }
+    // Скрипт уже добавлен (грузится) — поллинг дождётся готовности.
+    if (document.querySelector('script[data-opencv]')) return;
+
     const script = document.createElement('script');
     script.src = OPENCV_URL;
     script.async = true;
     script.dataset.opencv = '1';
     script.onload = () => {
-      const cv = (globalThis as unknown as { cv?: CvLike }).cv;
-      if (cv) onScript(cv);
-      else reject(new Error('OpenCV не определил глобальный cv'));
+      const cv = getCv();
+      if (cv && cv.Mat) finish(cv);
+      else if (cv) {
+        try {
+          cv.onRuntimeInitialized = hook;
+        } catch {
+          /* поллинг подхватит */
+        }
+      }
+      // если cv ещё нет — поллинг/таймаут разрулят
     };
-    script.onerror = () => reject(new Error('Не удалось загрузить OpenCV.js'));
+    script.onerror = () => finish(undefined, new Error('Не удалось загрузить OpenCV.js'));
     document.head.appendChild(script);
   }).catch((err) => {
     cvPromise = null; // дать шанс повторить позже

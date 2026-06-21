@@ -42,7 +42,11 @@
     <input type="checkbox" bind:checked={$autoCrop} disabled={$scannerBusy} />
     <span>Авто-обрезка по краям листа</span>
   </label>
-  <p class="hint">Снимайте страницы по одной или перетащите готовые фото сюда</p>
+  {#if $scannerBusy}
+    <p class="hint busy">Обработка фото… (первый раз — загрузка авто-обрезки, это пару секунд)</p>
+  {:else}
+    <p class="hint">Снимайте страницы по одной или перетащите готовые фото сюда</p>
+  {/if}
   <input
     bind:this={input}
     type="file"
@@ -107,5 +111,9 @@
     margin: 0.2rem 0 0;
     color: var(--muted);
     font-size: 0.9rem;
+  }
+  .hint.busy {
+    color: var(--accent);
+    font-weight: 600;
   }
 </style>
