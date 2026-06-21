@@ -33,6 +33,10 @@ export interface ServerStatus {
   /** Число книг в каталоге. */
   books?: number;
   ok: boolean;
+  /** LAN-IP, на котором сервер доступен другим устройствам. */
+  address?: string;
+  /** Порт, который сервер реально занял. */
+  port?: number;
 }
 
 /**

@@ -49,6 +49,10 @@ struct AppState {
     name: String,
     /// Папка библиотеки (для сохранения загружаемых книг).
     library: PathBuf,
+    /// LAN-IP сервера (для /status и подсказок клиенту).
+    address: String,
+    /// Реально занятый порт.
+    port: u16,
     /// Секрет подписи JWT (персистентный, из meta-таблицы).
     jwt_secret: String,
     /// Канал живой рассылки прогресса WS-клиентам (JSON DeviceProgress).
@@ -68,7 +72,11 @@ async fn main() {
     let db_path = PathBuf::from(env_or("CHITALKA_DB", "./chitalka.db"));
     let token = std::env::var("CHITALKA_TOKEN").ok().filter(|t| !t.is_empty());
     let name = env_or("CHITALKA_NAME", "Читалка");
-    let port: u16 = env_or("CHITALKA_PORT", "9700").parse().unwrap_or(9700);
+    // Порт: если CHITALKA_PORT задан явно — используем его; иначе берём первый
+    // свободный из диапазона ТЗ (9700–9899), а если все заняты — эфемерный.
+    let explicit_port = std::env::var("CHITALKA_PORT")
+        .ok()
+        .and_then(|s| s.trim().parse::<u16>().ok());
 
     std::fs::create_dir_all(&library).ok();
     let db = Db::open(&db_path).expect("не удалось открыть БД");
@@ -77,6 +85,11 @@ async fn main() {
         Err(e) => tracing::warn!("сканирование библиотеки не удалось: {e}"),
     }
 
+    // Слушатель (с авто-выбором порта) и реальный адрес.
+    let listener = bind_listener(explicit_port).await;
+    let port = listener.local_addr().map(|a| a.port()).unwrap_or(0);
+    let address = mdns::local_ipv4().to_string(); // LAN-IP (0.0.0.0 слушает все)
+
     let (progress_tx, _) = broadcast::channel::<String>(64);
     let jwt_secret = db.jwt_secret();
     let state = Arc::new(AppState {
@@ -84,6 +97,8 @@ async fn main() {
         token,
         name,
         library: library.clone(),
+        address: address.clone(),
+        port,
         jwt_secret,
         progress_tx,
     });
@@ -139,15 +154,34 @@ async fn main() {
             Some(d)
         }
         Err(e) => {
-            tracing::warn!("mDNS недоступен: {e} (используйте QR/ручной ввод)");
+            tracing::warn!("mDNS недоступен: {e} (используйте ручной ввод адреса)");
             None
         }
     };
 
-    let addr = SocketAddr::from(([0, 0, 0, 0], port));
-    let listener = tokio::net::TcpListener::bind(addr).await.expect("bind");
-    tracing::info!("сервер слушает http://{addr}");
+    tracing::info!("Сервер «{}» доступен по адресам:", state.name);
+    tracing::info!("  http://{address}:{port}   ← для других устройств в сети");
+    tracing::info!("  http://localhost:{port}   ← на этом компьютере");
     axum::serve(listener, app).await.expect("serve");
+}
+
+/// Привязать слушатель: явный порт, иначе первый свободный 9700–9899, иначе эфемерный.
+async fn bind_listener(explicit: Option<u16>) -> tokio::net::TcpListener {
+    use tokio::net::TcpListener;
+    if let Some(p) = explicit {
+        return TcpListener::bind(SocketAddr::from(([0, 0, 0, 0], p)))
+            .await
+            .unwrap_or_else(|e| panic!("не удалось занять порт {p} (CHITALKA_PORT): {e}"));
+    }
+    for p in 9700u16..=9899 {
+        if let Ok(l) = TcpListener::bind(SocketAddr::from(([0, 0, 0, 0], p))).await {
+            return l;
+        }
+    }
+    tracing::warn!("порты 9700–9899 заняты — беру эфемерный");
+    TcpListener::bind(SocketAddr::from(([0, 0, 0, 0], 0)))
+        .await
+        .expect("bind ephemeral")
 }
 
 fn env_or(key: &str, default: &str) -> String {
@@ -181,6 +215,8 @@ async fn status(State(st): State<Arc<AppState>>) -> Json<ServerStatus> {
         version: VERSION.to_string(),
         books: st.db.count_books(),
         ok: true,
+        address: st.address.clone(),
+        port: st.port,
     })
 }
 

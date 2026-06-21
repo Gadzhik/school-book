@@ -1,6 +1,8 @@
 <script lang="ts">
   import type { OutputFormat } from '@reader/book-scanner';
   import { pages, finishScanner, assembleProgress, scannerBusy } from './store';
+  import { settings } from '../stores';
+  import { requestLlm } from '../components/llm-consent';
 
   let title = $state('');
   let author = $state('');
@@ -55,14 +57,22 @@
     {/each}
   </fieldset>
 
-  {#if format === 'epub'}
+  {#if format === 'epub' && $settings.llmEnabled}
     <label class="opt">
-      <input type="checkbox" bind:checked={cleanup} />
+      <input
+        type="checkbox"
+        checked={cleanup}
+        onchange={async (e) => {
+          const on = e.currentTarget.checked;
+          cleanup = on ? await requestLlm() : false;
+          e.currentTarget.checked = cleanup;
+        }}
+      />
       <span class="opt-label">
-        Улучшить текст ИИ
+        Улучшить текст ИИ <span class="beta">β</span>
         <span class="opt-note">
-          Локальная модель исправит ошибки распознавания и абзацы. Нужен запущенный
-          Ollama/LM Studio, иначе текст останется как есть. Дольше.
+          Локальная модель (бета) исправит ошибки распознавания и абзацы. Может
+          ошибаться. Нужен запущенный Ollama/LM Studio, иначе текст останется как есть. Дольше.
         </span>
       </span>
     </label>
@@ -154,6 +164,14 @@
   .opt-label {
     font-weight: 600;
     color: var(--text);
+  }
+  .beta {
+    font-size: 0.65rem;
+    font-weight: 700;
+    padding: 0.05rem 0.35rem;
+    border-radius: 999px;
+    background: #d9a400;
+    color: #1a1400;
   }
   .opt-note {
     display: block;

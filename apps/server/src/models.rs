@@ -41,13 +41,17 @@ pub struct WordSyncItem {
     pub deleted: bool,
 }
 
-/// Ответ /status (для пинга и отображения имени сервера).
+/// Ответ /status (для пинга и отображения имени/адреса сервера).
 #[derive(Debug, Serialize)]
 pub struct ServerStatus {
     pub name: String,
     pub version: String,
     pub books: i64,
     pub ok: bool,
+    /// LAN-IP, на котором сервер доступен другим устройствам.
+    pub address: String,
+    /// Порт, который сервер реально занял.
+    pub port: u16,
 }
 
 // --- Аккаунты и роли (ТЗ Часть 6) ---

@@ -6,6 +6,7 @@
   import ServerScreen from '@reader/ui/server/ServerScreen.svelte';
   import ReportScreen from '@reader/ui/components/ReportScreen.svelte';
   import WelcomeScreen from '@reader/ui/server/WelcomeScreen.svelte';
+  import LlmDisclaimer from '@reader/ui/components/LlmDisclaimer.svelte';
 
   // Доступ только по активной сессии (ТЗ Часть 6): без аккаунта — простой
   // экран входа/регистрации; ожидающий одобрения — экран ожидания.
@@ -37,3 +38,6 @@
 {:else}
   <Library />
 {/if}
+
+<!-- Глобальное окно предупреждения о бета-ИИ (поверх любого экрана). -->
+<LlmDisclaimer />

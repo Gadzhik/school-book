@@ -6,6 +6,8 @@
    */
   import { explainText, summarizeText } from '@reader/core';
   import type { ScreenRect } from '@reader/reader-engine';
+  import { settings } from '../stores';
+  import { requestLlm } from './llm-consent';
   import Icon from './Icon.svelte';
 
   interface Props {
@@ -23,6 +25,7 @@
 
   async function run(kind: 'explain' | 'summary') {
     if (busy) return;
+    if (!(await requestLlm())) return; // бета-ИИ: согласие/выключено
     busy = true;
     result = '';
     error = '';
@@ -56,8 +59,10 @@
   </header>
 
   <div class="actions">
-    <button onclick={() => run('explain')} disabled={busy}>Объяснить просто</button>
-    <button onclick={() => run('summary')} disabled={busy}>Кратко</button>
+    {#if $settings.llmEnabled}
+      <button onclick={() => run('explain')} disabled={busy}>Объяснить просто <span class="b">β</span></button>
+      <button onclick={() => run('summary')} disabled={busy}>Кратко <span class="b">β</span></button>
+    {/if}
     {#if onhighlight}
       <button class="hl" onclick={() => onhighlight?.()} disabled={busy}>Выделить</button>
     {/if}
@@ -129,6 +134,10 @@
   .actions button.hl {
     border-color: #d9a400;
     color: #b58600;
+  }
+  .b {
+    font-size: 0.7rem;
+    opacity: 0.7;
   }
   .status {
     margin: 0;

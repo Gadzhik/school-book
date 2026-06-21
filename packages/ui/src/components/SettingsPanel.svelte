@@ -242,7 +242,20 @@
   </section>
 
   <section>
-    <h3>ИИ-помощник</h3>
+    <h3>ИИ-помощник <span class="beta">бета</span></h3>
+    <label class="toggle">
+      <input
+        type="checkbox"
+        checked={$settings.llmEnabled}
+        onchange={(e) => patchSettings({ llmEnabled: e.currentTarget.checked })}
+      />
+      <span>Включить ИИ-функции</span>
+    </label>
+    <p class="hint">
+      Работают через локальную модель, в тестировании. Ответы могут быть неточными —
+      не для оценок и важных решений.
+    </p>
+    {#if $settings.llmEnabled}
     <div class="chips">
       <button
         class="chip"
@@ -281,6 +294,7 @@
       Для веб-клиента включите CORS: Ollama — <code>OLLAMA_ORIGINS=*</code>; LM Studio — Developer →
       Enable CORS.
     </p>
+    {/if}
   </section>
 
   <section>
@@ -404,6 +418,26 @@
     color: var(--muted);
     font-size: 0.8rem;
     line-height: 1.4;
+  }
+  .toggle {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: var(--text);
+    cursor: pointer;
+  }
+  .toggle input {
+    width: 1.1rem;
+    height: 1.1rem;
+  }
+  .beta {
+    font-size: 0.65rem;
+    font-weight: 700;
+    vertical-align: middle;
+    padding: 0.05rem 0.4rem;
+    border-radius: 999px;
+    background: #d9a400;
+    color: #1a1400;
   }
   .hint code {
     background: var(--bg);
