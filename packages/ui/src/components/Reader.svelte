@@ -44,6 +44,7 @@
   import BookmarksPanel from './BookmarksPanel.svelte';
   import HighlightPopover from './HighlightPopover.svelte';
   import QuizPanel from './QuizPanel.svelte';
+  import { requestLlm } from './llm-consent';
   import { saveWord } from '../words/store';
   import Icon from './Icon.svelte';
 
@@ -77,12 +78,13 @@
 
   // Квиз по главе (ТЗ Часть 6, E4)
   let quizText = $state<string | null>(null);
-  function startQuiz() {
+  async function startQuiz() {
     const t = controller?.sampleText(6000) ?? '';
     if (t.length < 200) {
       alert('Маловато текста на странице для квиза — откройте главу с текстом.');
       return;
     }
+    if (!(await requestLlm())) return; // бета-ИИ: согласие/выключено
     quizText = t;
   }
   let loading = $state(true);
@@ -490,9 +492,9 @@
       <Icon name="bookmark" />
       {#if bookmarks.length + highlights.length > 0}<span class="badge">{bookmarks.length + highlights.length}</span>{/if}
     </button>
-    {#if !$readerIsFixedLayout}
-      <button class="text-btn" onclick={startQuiz} title="Квиз на понимание (ИИ)">
-        Квиз
+    {#if !$readerIsFixedLayout && $settings.llmEnabled}
+      <button class="text-btn" onclick={startQuiz} title="Квиз на понимание (ИИ, бета)">
+        Квиз β
       </button>
     {/if}
     <button class="icon-btn" onclick={() => (showToc = !showToc)} aria-label="Оглавление">

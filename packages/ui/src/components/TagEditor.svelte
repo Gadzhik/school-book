@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { Facet } from '@reader/core';
-  import { books } from '../stores';
+  import { books, settings } from '../stores';
   import {
     classes,
     subjects,
@@ -9,6 +9,7 @@
     tagBook,
     suggestWithLLM,
   } from '../classification';
+  import { requestLlm } from './llm-consent';
   import Icon from './Icon.svelte';
 
   interface Props {
@@ -26,6 +27,7 @@
 
   async function askLLM() {
     if (llmBusy) return;
+    if (!(await requestLlm())) return; // бета-ИИ: согласие/выключено
     llmBusy = true;
     llmMsg = '';
     try {
@@ -69,12 +71,14 @@
     <button class="icon-btn" onclick={onclose} aria-label="Закрыть"><Icon name="close" /></button>
   </header>
 
-  <div class="ai">
-    <button class="ai-btn" onclick={askLLM} disabled={llmBusy}>
-      {llmBusy ? 'Думаю…' : 'Спросить ИИ'}
-    </button>
-    {#if llmMsg}<span class="ai-msg">{llmMsg}</span>{/if}
-  </div>
+  {#if $settings.llmEnabled}
+    <div class="ai">
+      <button class="ai-btn" onclick={askLLM} disabled={llmBusy}>
+        {llmBusy ? 'Думаю…' : 'Спросить ИИ β'}
+      </button>
+      {#if llmMsg}<span class="ai-msg">{llmMsg}</span>{/if}
+    </div>
+  {/if}
 
   <section>
     <h3>Класс</h3>

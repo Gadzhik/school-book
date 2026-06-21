@@ -23,7 +23,11 @@ pnpm --filter @reader/server dev
 | `CHITALKA_DB` | `./chitalka.db` | Файл SQLite-каталога |
 | `CHITALKA_TOKEN` | — | Токен пэйринга; если задан — нужен `Authorization: Bearer <token>` (ТЗ 4.5) |
 | `CHITALKA_NAME` | `Читалка` | Имя сервера (в /status и OPDS) |
-| `CHITALKA_PORT` | `9700` | Порт (диапазон ТЗ 9700–9899) |
+| `CHITALKA_PORT` | авто | Порт. Если не задан — берётся первый свободный из 9700–9899 (если все заняты — эфемерный). Если задан — используется он (ошибка, если занят). |
+
+Сервер слушает `0.0.0.0` — доступен одновременно по **LAN-IP** (для других
+устройств) и по **localhost** (на этом компьютере). При старте печатает обе
+ссылки; `GET /status` возвращает `address` (LAN-IP) и `port`.
 
 CORS разрешён для любого origin — веб-клиент (PWA на другом порту) может
 обращаться к серверу напрямую.
@@ -34,7 +38,7 @@ CORS разрешён для любого origin — веб-клиент (PWA н
 
 ## Эндпоинты
 
-- `GET /status` — JSON `{ name, version, books, ok }` (открыт, для пинга/обнаружения).
+- `GET /status` — JSON `{ name, version, books, ok, address, port }` (открыт, для пинга/обнаружения; `address` — LAN-IP, `port` — реально занятый).
 - `GET /opds` — корневой OPDS-навигационный фид (по измерениям + все книги).
 - `GET /opds/all` — acquisition-фид всех книг.
 - `GET /opds/{classes|subjects|categories}` — навигация по измерению (значения с числом книг).

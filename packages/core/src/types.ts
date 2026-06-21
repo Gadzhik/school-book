@@ -307,6 +307,10 @@ export interface ReaderSettings {
   eink: boolean;
   /** Рендерить математические формулы (KaTeX/MathML), ТЗ Часть 3 п.3. */
   math: boolean;
+  /** ИИ-функции включены (бета; можно отключить). */
+  llmEnabled: boolean;
+  /** Пользователь принял предупреждение о бета-ИИ (одноразовое окно). */
+  llmConsent: boolean;
   /** Провайдер локальной LLM (ИИ-функции). */
   llmProvider: 'ollama' | 'lmstudio';
   /** Свой базовый URL LLM (пусто — дефолт провайдера). */
@@ -333,6 +337,8 @@ export const DEFAULT_SETTINGS: ReaderSettings = {
   gamification: false,
   eink: false,
   math: true,
+  llmEnabled: true,
+  llmConsent: false,
   llmProvider: 'ollama',
   llmUrl: '',
   llmModel: '',
