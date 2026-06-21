@@ -10,3 +10,6 @@ export { default as Icon } from './components/Icon.svelte';
 
 export * from './stores';
 export * from './theme';
+
+// Сессия пользователя (ТЗ Часть 6) — для гейтинга доступа в оболочке приложения.
+export { session, logout } from './server/auth';
