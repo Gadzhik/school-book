@@ -1,0 +1,14 @@
+{
+  "name": "@reader/adapters",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Платформенные адаптеры (камера, далее storage/files/tts/share). Прячут платформу за интерфейсами",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./*": "./src/*"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2"
+  }
+}

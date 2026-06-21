@@ -1,0 +1,19 @@
+{
+  "name": "@reader/mobile",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Мобильная оболочка Tauri 2 mobile: та же web-сборка читалки на iOS/Android",
+  "type": "module",
+  "scripts": {
+    "tauri": "tauri",
+    "android:init": "tauri android init",
+    "android:dev": "tauri android dev",
+    "android:build": "tauri android build",
+    "ios:init": "tauri ios init",
+    "ios:dev": "tauri ios dev",
+    "ios:build": "tauri ios build"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.1.0"
+  }
+}

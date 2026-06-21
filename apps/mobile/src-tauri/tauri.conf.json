@@ -1,0 +1,34 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Читалка для школьников",
+  "version": "0.0.1",
+  "identifier": "app.reader.school",
+  "build": {
+    "frontendDist": "../../web/dist",
+    "devUrl": "http://localhost:5173",
+    "beforeDevCommand": "pnpm --filter @reader/web dev",
+    "beforeBuildCommand": "pnpm --filter @reader/web build"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Читалка для школьников"
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
+  }
+}

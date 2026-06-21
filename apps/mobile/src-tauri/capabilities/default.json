@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/mobile-schema.json",
+  "identifier": "default",
+  "description": "Базовые разрешения мобильной оболочки",
+  "windows": ["main"],
+  "permissions": ["core:default", "opener:default"]
+}

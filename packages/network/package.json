@@ -1,0 +1,20 @@
+{
+  "name": "@reader/network",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Клиент-серверный режим (Фаза 5): клиент API библиотечного сервера, OPDS-парсер, модели синхронизации, пэйринг. Общий код для веб/десктоп/мобилок",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./*": "./src/*"
+  },
+  "scripts": {
+    "check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@reader/core": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2"
+  }
+}

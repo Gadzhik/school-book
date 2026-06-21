@@ -1,0 +1,28 @@
+[package]
+name = "reader-desktop"
+version = "0.0.0"
+description = "Читалка для школьников — десктоп"
+edition = "2021"
+rust-version = "1.77.2"
+
+[lib]
+# Имя библиотеки общее для десктопа и будущего мобильного шелла.
+name = "reader_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Обнаружение библиотечного сервера в LAN по mDNS (ТЗ 4.3).
+mdns-sd = "0.13"
+# Нативный синтез речи (системные голоса лучше Web Speech в WebView) — Фаза 1.
+tts = "0.26"
+
+[features]
+# Тихая консоль в релизе и т.п. при необходимости включается здесь.
+default = []

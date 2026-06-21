@@ -1,0 +1,23 @@
+{
+  "name": "reader-app",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Универсальная офлайн-первая читалка-конвертер для школьников (монорепо)",
+  "type": "module",
+  "packageManager": "pnpm@10.20.0",
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "web:dev": "pnpm --filter @reader/web dev",
+    "web:build": "pnpm --filter @reader/web build",
+    "web:preview": "pnpm --filter @reader/web preview",
+    "check": "turbo run check"
+  },
+  "devDependencies": {
+    "turbo": "^2.3.3",
+    "typescript": "^5.7.2"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["esbuild"]
+  }
+}
