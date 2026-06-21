@@ -5,6 +5,17 @@
   import { startScanner } from '../scanner/store';
   import { loadTaxonomy, filteredBooks, filterActive } from '../classification';
   import { dueCount, refreshWords } from '../words/store';
+  import { session, logout } from '../server/auth';
+
+  // Управление книгами (добавить/сканировать) — не для ученика (ТЗ 6.1).
+  const role = $derived($session?.user.role);
+  const canManageBooks = $derived(role === 'teacher' || role === 'admin' || role === 'power');
+  const ROLE_LABEL: Record<string, string> = {
+    admin: 'Администратор',
+    power: 'Старший пользователь',
+    teacher: 'Учитель',
+    student: 'Ученик',
+  };
   import FileDropzone from './FileDropzone.svelte';
   import BookCard from './BookCard.svelte';
   import FacetFilter from './FacetFilter.svelte';
@@ -30,7 +41,11 @@
   <header class="head">
     <div>
       <h1>Моя библиотека</h1>
-      <p class="sub">Книги хранятся только на этом устройстве</p>
+      {#if $session}
+        <p class="sub">{$session.user.fullName} · {ROLE_LABEL[role ?? ''] ?? role}</p>
+      {:else}
+        <p class="sub">Книги хранятся только на этом устройстве</p>
+      {/if}
       {#if $settings.gamification && stats && stats.streak > 0}
         <p class="streak" title={`Дней с чтением всего: ${stats.totalDays}`}>
           🔥 Серия чтения: {stats.streak}
@@ -52,10 +67,17 @@
         <Icon name="book" size={18} />
         Сервер
       </button>
-      <button class="scan-btn" onclick={() => startScanner()}>
-        <Icon name="plus" size={20} />
-        Создать книгу из фото
-      </button>
+      {#if canManageBooks}
+        <button class="scan-btn" onclick={() => startScanner()}>
+          <Icon name="plus" size={20} />
+          Создать книгу из фото
+        </button>
+      {/if}
+      {#if $session}
+        <button class="words-btn" onclick={logout} title="Выйти из аккаунта">
+          Выйти
+        </button>
+      {/if}
     </div>
   </header>
 
@@ -68,14 +90,20 @@
 
     <div class="content">
       <div class="grid">
-        <FileDropzone />
+        {#if canManageBooks}
+          <FileDropzone />
+        {/if}
         {#each $filteredBooks as book (book.id)}
           <BookCard {book} ontag={(id) => (tagBookId = id)} />
         {/each}
       </div>
 
       {#if $books.length === 0}
-        <p class="empty">Пока пусто. Добавьте первую книгу — EPUB, FB2 или PDF.</p>
+        {#if canManageBooks}
+          <p class="empty">Пока пусто. Добавьте первую книгу — EPUB, FB2 или PDF.</p>
+        {:else}
+          <p class="empty">Книг пока нет. Скачайте книги класса на экране «Сервер».</p>
+        {/if}
       {:else if $filteredBooks.length === 0 && $filterActive}
         <p class="empty">Под фильтр ничего не подходит. Измените условия.</p>
       {/if}
