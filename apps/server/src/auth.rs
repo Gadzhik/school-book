@@ -83,3 +83,27 @@ fn now_secs() -> i64 {
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn password_hash_and_verify() {
+        let h = hash_password("secret123").unwrap();
+        assert!(h.starts_with("$argon2")); // не plaintext
+        assert!(verify_password("secret123", &h));
+        assert!(!verify_password("wrong", &h));
+    }
+
+    #[test]
+    fn jwt_roundtrip_and_wrong_secret() {
+        let secret = "test-secret";
+        let token = issue_token(secret, "user-1", Role::Teacher).unwrap();
+        let claims = verify_token(secret, &token).expect("валидный токен");
+        assert_eq!(claims.sub, "user-1");
+        assert_eq!(claims.role, "teacher");
+        // Чужим секретом не проходит.
+        assert!(verify_token("other-secret", &token).is_none());
+    }
+}
