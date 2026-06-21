@@ -7,8 +7,15 @@ iOS/Android из той же web-сборки читалки. Ядро (`package
 ## Что уже есть
 
 - `src-tauri/` — Rust-крейт оболочки (`reader_mobile_lib`), `tauri.conf.json`
-  (грузит `../../web/dist`, dev — `http://localhost:5173`), иконки.
-- `cargo check` проходит (логика компилируется).
+  (грузит `../../web/dist`, dev — `http://localhost:5173`), иконки (вкл. `icon.icns`).
+- Точка входа `#[cfg_attr(mobile, tauri::mobile_entry_point)]` — общая для Android и **iOS**.
+- `tauri.conf.json`: `identifier = app.reader.school` (валидный iOS bundle id),
+  `bundle.iOS.minimumSystemVersion = 13.0`.
+- Скрипты `ios:init|dev|build` в `package.json`.
+- **Android собран и проверен на эмуляторе** (подключается к серверу, UI рендерится нативно).
+- **iOS — код и конфиг готовы; не собран**, т.к. генерация Xcode-проекта
+  (`tauri ios init`) и сборка `.ipa` выполняются **только на macOS + Xcode**
+  (тулчейн Apple недоступен на Windows). На Mac — это команды ниже, без правок кода.
 
 ## Пререквизиты сборки на устройство
 
@@ -39,10 +46,16 @@ iOS/Android из той же web-сборки читалки. Ядро (`package
 pnpm --filter @reader/mobile android:init
 pnpm --filter @reader/mobile android:dev      # запуск на эмуляторе/устройстве
 
-# iOS (macOS)
-pnpm --filter @reader/mobile ios:init
-pnpm --filter @reader/mobile ios:dev
+# iOS (только на macOS + Xcode)
+rustup target add aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios
+pnpm --filter @reader/mobile ios:init      # генерит src-tauri/gen/apple (Xcode-проект)
+pnpm --filter @reader/mobile ios:dev       # запуск в симуляторе/на устройстве
+pnpm --filter @reader/mobile ios:build     # сборка .ipa (release)
 ```
+
+Подпись и установка на реальное устройство / App Store требуют аккаунт Apple
+Developer: задать команду подписи через `export APPLE_DEVELOPMENT_TEAM=<TeamID>`
+(или открыть `src-tauri/gen/apple` в Xcode и выбрать Team в Signing & Capabilities).
 
 `*:init` создаёт нативный проект в `src-tauri/gen/` (в .gitignore).
 
