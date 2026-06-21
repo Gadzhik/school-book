@@ -1,0 +1,18 @@
+{
+  "name": "@reader/reader-engine",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Обёртка над foliate-js (EPUB/FB2/MOBI/AZW3/CBZ) и его pdf.js (PDF): рендер, пагинация, TOC, прогресс",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./vendor-path": "./src/vendor-path.ts"
+  },
+  "devDependencies": {
+    "@types/katex": "^0.16.8",
+    "typescript": "^5.7.2"
+  },
+  "dependencies": {
+    "katex": "^0.17.0"
+  }
+}

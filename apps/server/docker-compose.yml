@@ -1,0 +1,35 @@
+# Библиотечный сервер читалки (ТЗ 4.6).
+# Запуск:  docker compose up -d
+# Положите книги в ./data/library, БД появится в ./data/chitalka.db.
+#
+# Конвенции: имя контейнера с префиксом chitalka_, основной порт 9700
+# (диапазон ТЗ 9700–9899), данные — во внешних томах.
+
+services:
+  chitalka_server:
+    container_name: chitalka_server
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: chitalka-server:latest
+    restart: unless-stopped
+    ports:
+      - "9700:9700"
+    environment:
+      # Имя сервера и токен пэйринга (ТЗ 4.5). Токен пуст — без авторизации.
+      CHITALKA_NAME: "Школьная библиотека"
+      CHITALKA_TOKEN: ""
+      CHITALKA_PORT: "9700"
+    volumes:
+      - ./data/library:/library
+      - ./data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:9700/status"]
+      interval: 30s
+      timeout: 3s
+      start_period: 5s
+      retries: 3
+    # mDNS-анонс (_chitalka._tcp.local) не проходит через bridge-сеть Docker.
+    # Чтобы нативные клиенты находили сервер по mDNS, на Linux включите host-сеть
+    # (раскомментируйте ниже и уберите ports). Иначе используйте QR/ручной ввод.
+    # network_mode: host

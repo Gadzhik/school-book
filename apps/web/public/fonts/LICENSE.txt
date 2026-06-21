@@ -1,0 +1,12 @@
+Шрифт OpenDyslexic
+==================
+
+Файлы OpenDyslexic-*.woff2 в этом каталоге — шрифт OpenDyslexic,
+распространяемый по лицензии SIL Open Font License 1.1 (OFL-1.1).
+
+Автор: Abbie Gonzalez и сообщество OpenDyslexic.
+Источник: https://github.com/antijingoist/opendyslexic
+Текст лицензии: https://openfontlicense.org/
+
+Назначение в проекте: дислексия-режим читалки (ТЗ Часть 1, Фаза 3).
+Шрифт включает кириллицу, что важно для русскоязычных читателей.

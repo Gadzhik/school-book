@@ -1,0 +1,24 @@
+{
+  "name": "@reader/book-scanner",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Создание книги из фотографий страниц: захват, улучшение, управление страницами, сборка (Фаза 2.5)",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./*": "./src/*"
+  },
+  "dependencies": {
+    "@pdf-lib/fontkit": "^1.1.1",
+    "@reader/adapters": "workspace:*",
+    "@reader/converters": "workspace:*",
+    "@reader/core": "workspace:*",
+    "@techstark/opencv-js": "^4.12.0-release.1",
+    "fflate": "^0.8.2",
+    "jscanify": "^1.4.2",
+    "pdf-lib": "^1.17.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2"
+  }
+}

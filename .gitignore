@@ -1,0 +1,38 @@
+# Зависимости
+node_modules/
+.pnpm-store/
+
+# Сборки
+dist/
+build/
+.turbo/
+
+# Окружение редактора / ОС
+.DS_Store
+Thumbs.db
+*.log
+
+# Vite / PWA
+apps/**/dev-dist/
+apps/**/public/foliate-js/
+
+# Tauri (фаза 1)
+apps/desktop/src-tauri/target/
+apps/mobile/src-tauri/target/
+apps/mobile/gen/
+
+# Rust-сервер
+apps/server/target/
+
+# Локальные настройки Claude (личное, не публиковать)
+.claude/
+
+# Базы данных сервера / рантайм-данные
+*.db
+*.db-wal
+*.db-shm
+apps/server/data/
+apps/server/library/
+
+# ТЗ и приватные спеки (по решению владельца — не публиковать)
+chitalka_promt_i_tehplan.md

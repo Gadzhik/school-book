@@ -1,0 +1,23 @@
+{
+  "name": "@reader/converters",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Конвертеры входных форматов в единую модель документа и сборка EPUB (Фаза 2). Взаимозаменяемые адаптеры",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./*": "./src/*"
+  },
+  "dependencies": {
+    "@reader/core": "workspace:*",
+    "fflate": "^0.8.2",
+    "mammoth": "^1.9.0",
+    "marked": "^15.0.4",
+    "mupdf": "^1.27.0",
+    "pandoc-wasm": "^1.1.0",
+    "tesseract.js": "^7.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2"
+  }
+}

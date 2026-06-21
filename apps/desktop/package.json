@@ -1,0 +1,15 @@
+{
+  "name": "@reader/desktop",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Десктоп-оболочка Tauri 2: та же web-сборка читалки в нативном окне (Win/macOS/Linux)",
+  "type": "module",
+  "scripts": {
+    "tauri": "tauri",
+    "dev": "tauri dev",
+    "build": "tauri build"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.1.0"
+  }
+}

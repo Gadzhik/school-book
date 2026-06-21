@@ -1,0 +1,30 @@
+{
+  "name": "@reader/ui",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Общие Svelte-компоненты читалки и настроек, темы, сторы состояния",
+  "type": "module",
+  "svelte": "./src/index.ts",
+  "exports": {
+    ".": {
+      "svelte": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./*": "./src/*"
+  },
+  "dependencies": {
+    "@reader/core": "workspace:*",
+    "@reader/reader-engine": "workspace:*",
+    "@reader/adapters": "workspace:*",
+    "@reader/book-scanner": "workspace:*",
+    "@reader/converters": "workspace:*",
+    "@reader/network": "workspace:*"
+  },
+  "peerDependencies": {
+    "svelte": "^5.0.0"
+  },
+  "devDependencies": {
+    "svelte": "^5.16.0",
+    "typescript": "^5.7.2"
+  }
+}
