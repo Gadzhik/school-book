@@ -837,3 +837,77 @@ fn now_ms() -> i64 {
         .map(|d| d.as_millis() as i64)
         .unwrap_or(0)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::{BookmarkSyncItem, Role, User, UserStatus};
+
+    fn mem_db() -> Db {
+        Db::open(Path::new(":memory:")).unwrap()
+    }
+
+    fn mk_user(id: &str, login: &str, role: Role, classes: &[&str]) -> User {
+        User {
+            id: id.into(),
+            role,
+            status: UserStatus::Active,
+            full_name: login.into(),
+            login: login.into(),
+            pw_hash: "x".into(),
+            subjects: vec![],
+            classes: classes.iter().map(|s| s.to_string()).collect(),
+            created_at: 0,
+        }
+    }
+
+    #[test]
+    fn users_create_find_status() {
+        let db = mem_db();
+        db.create_user(&mk_user("u1", "ivan", Role::Student, &["7"])).unwrap();
+        assert!(db.create_user(&mk_user("u2", "ivan", Role::Student, &[])).is_err()); // login UNIQUE
+        let got = db.user_by_login("ivan").unwrap().unwrap();
+        assert_eq!(got.id, "u1");
+        assert_eq!(got.classes, vec!["7".to_string()]);
+        assert!(db.set_user_status("u1", UserStatus::Blocked).unwrap());
+        assert_eq!(db.user_by_id("u1").unwrap().unwrap().status, UserStatus::Blocked);
+    }
+
+    #[test]
+    fn students_in_class_filters() {
+        let db = mem_db();
+        db.create_user(&mk_user("s7", "s7", Role::Student, &["7"])).unwrap();
+        db.create_user(&mk_user("s8", "s8", Role::Student, &["8"])).unwrap();
+        db.create_user(&mk_user("t", "t", Role::Teacher, &["7"])).unwrap();
+        let in7 = db.students_in_class("7").unwrap();
+        assert_eq!(in7.len(), 1);
+        assert_eq!(in7[0].id, "s7");
+    }
+
+    fn bm(id: &str, label: &str, updated: i64) -> BookmarkSyncItem {
+        BookmarkSyncItem {
+            id: id.into(),
+            book_id: "b1".into(),
+            locator: "cfi/2".into(),
+            label: Some(label.into()),
+            excerpt: None,
+            fraction: Some(0.1),
+            created_at: 1000,
+            updated_at: updated,
+            deleted: false,
+        }
+    }
+
+    #[test]
+    fn bookmarks_lww_and_isolation() {
+        let db = mem_db();
+        db.upsert_bookmarks("u1", &[bm("bm1", "новое", 2000)]).unwrap();
+        // Старая версия не перезаписывает.
+        db.upsert_bookmarks("u1", &[bm("bm1", "старое", 1000)]).unwrap();
+        let items = db.bookmarks_since("u1", 0).unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].label.as_deref(), Some("новое"));
+        // Другой пользователь не видит чужие закладки.
+        assert_eq!(db.bookmarks_since("u2", 0).unwrap().len(), 0);
+    }
+}

@@ -129,7 +129,10 @@ async function chat(
           messages,
           temperature: o.temperature,
           stream: false,
-          ...(o.json ? { response_format: { type: 'json_object' } } : {}),
+          // LM Studio требует response_format.type = json_schema | text
+          // (старый OpenAI-овский json_object даёт 400). Просим JSON через
+          // промпт, а ответ разбираем устойчиво (parseJsonLoose).
+          ...(o.json ? { response_format: { type: 'text' as const } } : {}),
         }),
       },
       cfg.timeoutMs,
@@ -286,6 +289,24 @@ export async function cleanupOcrText(text: string, opts: LlmOptions = {}): Promi
   }
 }
 
+/**
+ * Устойчивый разбор JSON из ответа модели: срезает ```json-обёртки и берёт
+ * фрагмент от первой `{` до последней `}` (модели иногда добавляют текст вокруг).
+ */
+function parseJsonLoose<T>(content: string): T {
+  const stripped = content.replace(/```(?:json)?/gi, '').trim();
+  try {
+    return JSON.parse(stripped) as T;
+  } catch {
+    const start = stripped.indexOf('{');
+    const end = stripped.lastIndexOf('}');
+    if (start >= 0 && end > start) {
+      return JSON.parse(stripped.slice(start, end + 1)) as T;
+    }
+    throw new Error('Модель вернула некорректный ответ');
+  }
+}
+
 /** Вопрос квиза на понимание (ТЗ Часть 6, E4). */
 export interface QuizQuestion {
   /** Текст вопроса. */
@@ -328,12 +349,7 @@ export async function generateQuiz(
     resolve(opts, 90000),
   );
 
-  let parsed: QuizAnswer;
-  try {
-    parsed = JSON.parse(content) as QuizAnswer;
-  } catch {
-    throw new Error('Модель вернула некорректный ответ');
-  }
+  const parsed = parseJsonLoose<QuizAnswer>(content);
   const raw = Array.isArray(parsed.questions) ? parsed.questions : [];
   const out: QuizQuestion[] = [];
   for (const item of raw) {
@@ -422,7 +438,7 @@ export async function classifyBookLLM(
       { json: true, temperature: 0 },
       resolve(opts, 30000),
     );
-    answer = JSON.parse(content) as LlmAnswer;
+    answer = parseJsonLoose<LlmAnswer>(content);
   } catch {
     return empty;
   }
