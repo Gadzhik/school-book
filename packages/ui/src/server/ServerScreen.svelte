@@ -5,7 +5,7 @@
    */
   import { onMount, onDestroy } from 'svelte';
   import type { OpdsEntry } from '@reader/network';
-  import { view } from '../stores';
+  import { view, books } from '../stores';
   import {
     connection,
     serverStatus,
@@ -16,6 +16,8 @@
     connect,
     disconnect,
     openCatalog,
+    searchCatalog,
+    serverIdOf,
     restoreSession,
     downloadEntry,
     coverUrl,
@@ -32,11 +34,30 @@
   import BookUpload from './BookUpload.svelte';
   import AssignmentsScreen from './AssignmentsScreen.svelte';
   import AdminPanel from './AdminPanel.svelte';
+  import LocalServerPanel from './LocalServerPanel.svelte';
+  import PasswordChange from './PasswordChange.svelte';
   import QrCode from '../components/QrCode.svelte';
   import Icon from '../components/Icon.svelte';
 
   let showShare = $state(false);
   let copied = $state(false);
+  let searchQ = $state('');
+
+  async function runSearch() {
+    await searchCatalog(searchQ);
+  }
+  async function clearSearch() {
+    searchQ = '';
+    await openCatalog();
+  }
+
+  // serverId → локальный id уже скачанной книги (показываем «Открыть»).
+  const downloadedMap = $derived(
+    new Map($books.filter((b) => b.serverId).map((b) => [b.serverId as string, b.id])),
+  );
+  function openLocal(bookId: string) {
+    view.set({ name: 'reader', bookId });
+  }
 
   // Адрес для подключения других устройств (из /status сервера).
   const shareUrl = $derived.by(() => {
@@ -274,6 +295,9 @@
       {/if}
 
       {#if $connectError}<p class="error">{$connectError}</p>{/if}
+
+      <!-- Поднять локальный сервер (десктоп). На вебе/мобильном скрыто. -->
+      <LocalServerPanel />
     </section>
   {:else}
     <section class="connected">
@@ -334,6 +358,10 @@
         </div>
       {/if}
 
+      {#if $session && $session.user.status === 'active'}
+        <PasswordChange />
+      {/if}
+
       {#if $session && $session.user.status === 'active' && canManage($session.user.role) && showApprovals}
         <ApprovalsScreen />
       {/if}
@@ -372,6 +400,20 @@
         </p>
       {/if}
 
+      {#if $session && $session.user.status !== 'pending'}
+        <div class="search-bar">
+          <input
+            type="search"
+            bind:value={searchQ}
+            placeholder="Поиск книги по названию или автору"
+            onkeydown={(e) => e.key === 'Enter' && runSearch()}
+          />
+          <button class="primary sm" onclick={runSearch}>Найти</button>
+          <button class="ghost sm" onclick={clearSearch}>Все книги</button>
+          <button class="ghost sm" onclick={() => openCatalog('/opds')}>По разделам</button>
+        </div>
+      {/if}
+
       {#if $session && $session.user.status !== 'pending' && $catalog}
         <h2 class="feed-title">{$catalog.feed.title}</h2>
         {#if $catalog.feed.entries.length === 0}
@@ -395,15 +437,21 @@
                 <span class="muted">{entry.authors.join(', ')}</span>
               {/if}
               {#if isBook(entry)}
-                <button
-                  class="primary sm"
-                  disabled={$downloading.has(entry.id || entry.acquisitionHref || '')}
-                  onclick={() => downloadEntry(entry)}
-                >
-                  {$downloading.has(entry.id || entry.acquisitionHref || '')
-                    ? 'Скачивание…'
-                    : 'Скачать'}
-                </button>
+                {@const localId = downloadedMap.get(serverIdOf(entry))}
+                {#if localId}
+                  <button class="primary sm" onclick={() => openLocal(localId)}>Открыть</button>
+                  <span class="downloaded">✓ скачано</span>
+                {:else}
+                  <button
+                    class="primary sm"
+                    disabled={$downloading.has(entry.id || entry.acquisitionHref || '')}
+                    onclick={() => downloadEntry(entry)}
+                  >
+                    {$downloading.has(entry.id || entry.acquisitionHref || '')
+                      ? 'Скачивание…'
+                      : 'Скачать'}
+                  </button>
+                {/if}
               {:else}
                 {@const href = navHref(entry)}
                 {#if href}
@@ -626,6 +674,26 @@
     font-size: 1.1rem;
     color: var(--text);
     margin: 0.5rem 0;
+  }
+  .search-bar {
+    display: flex;
+    gap: 0.5rem;
+    margin: 0.8rem 0 0.4rem;
+    flex-wrap: wrap;
+  }
+  .search-bar input {
+    flex: 1;
+    min-width: 180px;
+    padding: 0.5rem 0.7rem;
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    background: var(--surface);
+    color: var(--text);
+    font: inherit;
+  }
+  .downloaded {
+    color: #2e7d32;
+    font-size: 0.8rem;
   }
   .entries {
     list-style: none;

@@ -23,6 +23,13 @@ mdns-sd = "0.13"
 # Нативный синтез речи (системные голоса лучше Web Speech в WebView) — Фаза 1.
 tts = "0.26"
 
+# Встроенный библиотечный сервер (GUI старт/стоп на десктопе). Только под
+# десктопные ОС: на Android/iOS не нужен и не должен тянуть rusqlite/axum.
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+chitalka-server = { path = "../../server" }
+# Для асинхронного Mutex вокруг хэндла сервера (держим лок через .await).
+tokio = { version = "1", features = ["sync"] }
+
 [features]
 # Тихая консоль в релизе и т.п. при необходимости включается здесь.
 default = []

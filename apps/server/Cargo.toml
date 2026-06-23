@@ -5,6 +5,11 @@ description = "Библиотечный сервер читалки (Фаза 5)
 edition = "2021"
 rust-version = "1.77"
 
+[lib]
+# Логика сервера — библиотека, чтобы встраивать в десктоп (GUI старт/стоп).
+name = "chitalka_server"
+path = "src/lib.rs"
+
 [[bin]]
 name = "chitalka-server"
 path = "src/main.rs"

@@ -5,7 +5,13 @@
 import { mount } from 'svelte';
 import { registerSW } from 'virtual:pwa-register';
 import { requestPersistentStorage, seedTaxonomy } from '@reader/core';
-import { initSettings, refreshLibrary, applyAppTheme, settings } from '@reader/ui';
+import {
+  initSettings,
+  refreshLibrary,
+  applyAppTheme,
+  settings,
+  initHistoryNavigation,
+} from '@reader/ui';
 import { get } from 'svelte/store';
 import App from './App.svelte';
 import './app.css';
@@ -23,6 +29,10 @@ async function bootstrap() {
 
   // Загружаем список книг.
   await refreshLibrary();
+
+  // Связываем навигацию с History API: аппаратная/жестовая «Назад» на Android
+  // (и кнопка назад браузера) ходит внутри приложения, а не сворачивает его.
+  initHistoryNavigation();
 
   mount(App, { target: document.getElementById('app')! });
 }

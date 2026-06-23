@@ -10,6 +10,7 @@
     loadAudit,
     downloadBackup,
   } from './admin';
+  import UsersPanel from './UsersPanel.svelte';
 
   const ACTION_LABEL: Record<string, string> = {
     register: 'регистрация',
@@ -19,6 +20,9 @@
     assign: 'назначено задание',
     unassign: 'удалено задание',
     backup: 'резервная копия',
+    create_user: 'создан пользователь',
+    set_role: 'смена роли',
+    delete_user: 'удалён пользователь',
   };
 
   onMount(loadAudit);
@@ -27,6 +31,9 @@
     return new Date(ts).toLocaleString('ru-RU');
   }
 </script>
+
+<!-- Управление пользователями (создать/роли/блок/удаление) — admin/power. -->
+<UsersPanel />
 
 <section class="admin">
   <div class="bar">

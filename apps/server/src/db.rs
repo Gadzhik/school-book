@@ -256,6 +256,29 @@ impl Db {
         rows.collect()
     }
 
+    /// Поиск книг по подстроке в названии или авторе (регистронезависимо).
+    /// Фильтрация в Rust: `to_lowercase` понимает Unicode, тогда как SQLite
+    /// `LIKE`/`COLLATE NOCASE` регистронезависим только для ASCII (кириллица
+    /// бы не находилась при разном регистре).
+    pub fn search_books(&self, query: &str) -> rusqlite::Result<Vec<Book>> {
+        let needle = query.trim().to_lowercase();
+        if needle.is_empty() {
+            return Ok(Vec::new());
+        }
+        Ok(self
+            .list_books()?
+            .into_iter()
+            .filter(|b| {
+                b.title.to_lowercase().contains(&needle)
+                    || b
+                        .author
+                        .as_deref()
+                        .map(|a| a.to_lowercase().contains(&needle))
+                        .unwrap_or(false)
+            })
+            .collect())
+    }
+
     /// Путь файла книги (для раздачи с Range).
     pub fn book_path(&self, id: &str) -> rusqlite::Result<Option<PathBuf>> {
         let conn = self.conn.lock().unwrap();
@@ -486,6 +509,44 @@ impl Db {
         let n = conn.execute(
             "UPDATE users SET status=?1 WHERE id=?2",
             params![status.as_str(), id],
+        )?;
+        Ok(n > 0)
+    }
+
+    /// Сменить роль пользователя (управление из админки).
+    pub fn set_user_role(&self, id: &str, role: Role) -> rusqlite::Result<bool> {
+        let conn = self.conn.lock().unwrap();
+        let n = conn.execute(
+            "UPDATE users SET role=?1 WHERE id=?2",
+            params![role.as_str(), id],
+        )?;
+        Ok(n > 0)
+    }
+
+    /// Удалить пользователя (управление из админки).
+    pub fn delete_user(&self, id: &str) -> rusqlite::Result<bool> {
+        let conn = self.conn.lock().unwrap();
+        let n = conn.execute("DELETE FROM users WHERE id=?1", params![id])?;
+        Ok(n > 0)
+    }
+
+    /// Число активных администраторов (для гарантии «админ всегда есть»).
+    pub fn active_admin_count(&self) -> i64 {
+        let conn = self.conn.lock().unwrap();
+        conn.query_row(
+            "SELECT COUNT(*) FROM users WHERE role='admin' AND status='active'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap_or(0)
+    }
+
+    /// Сменить хэш пароля пользователя (смена своего / сброс админом).
+    pub fn set_user_password(&self, id: &str, pw_hash: &str) -> rusqlite::Result<bool> {
+        let conn = self.conn.lock().unwrap();
+        let n = conn.execute(
+            "UPDATE users SET pw_hash=?1 WHERE id=?2",
+            params![pw_hash, id],
         )?;
         Ok(n > 0)
     }
@@ -812,11 +873,14 @@ fn collect_books(root: &Path, dir: &Path, out: &mut Vec<(String, PathBuf, String
         } else if let Some(ext) = ext_of(&path) {
             if BOOK_EXTS.contains(&ext.as_str()) {
                 let size = e.metadata().map(|m| m.len() as i64).unwrap_or(0);
+                // Нормализуем разделитель в '/', чтобы id совпадал с тем, что
+                // формирует загрузка через API (там путь всегда через '/').
+                // Иначе на Windows '\' давал другой id → дубль книги при рескане.
                 let rel = path
                     .strip_prefix(root)
                     .unwrap_or(&path)
                     .to_string_lossy()
-                    .to_string();
+                    .replace('\\', "/");
                 out.push((rel, path, ext, size));
             }
         }

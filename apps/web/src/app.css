@@ -56,6 +56,16 @@ body {
 
 #app {
   height: 100dvh;
+  /* Edge-to-edge на Android (MainActivity.enableEdgeToEdge) рисует WebView под
+     системными барами. Отступаем на безопасные зоны (шторка статуса, навигация,
+     вырез камеры в ландшафте), чтобы шапки и кнопки не уезжали под них.
+     На вебе/десктопе env() = 0 — без эффекта. Нужен viewport-fit=cover (см. index.html). */
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+  /* Фон под барами = фон приложения, а не прозрачность. */
+  background: var(--bg);
 }
 
 a {

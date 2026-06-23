@@ -125,8 +125,17 @@ export function disconnect(): void {
   persist(null);
 }
 
-/** Загрузить OPDS-каталог (корневой или по ссылке навигации). */
-export async function openCatalog(path?: string): Promise<void> {
+/** serverId книги из ссылки скачивания `/books/<id>/file` (для дедупа/прогресса). */
+export function serverIdOf(entry: OpdsEntry): string {
+  return /\/books\/([^/]+)\/file/.exec(entry.acquisitionHref ?? '')?.[1] ?? entry.id ?? '';
+}
+
+/**
+ * Загрузить OPDS-каталог. По умолчанию — «Все книги» (сразу видны книги с
+ * кнопкой скачивания), чтобы не путать навигацией. Навигация по классам/
+ * предметам доступна по ссылкам (openCatalog(href)) и кнопке «По разделам».
+ */
+export async function openCatalog(path = '/opds/all'): Promise<void> {
   const c = client();
   if (!c) return;
   connectError.set('');
@@ -137,6 +146,16 @@ export async function openCatalog(path?: string): Promise<void> {
       e instanceof Error ? `Каталог недоступен: ${e.message}` : 'Каталог недоступен',
     );
   }
+}
+
+/** Поиск книг в каталоге по названию/автору. Пустой запрос → корневой каталог. */
+export async function searchCatalog(query: string): Promise<void> {
+  const q = query.trim();
+  if (!q) {
+    await openCatalog();
+    return;
+  }
+  await openCatalog(`/opds/search?q=${encodeURIComponent(q)}`);
 }
 
 /** Восстановить сессию при входе на экран: пингуем сохранённый сервер. */
