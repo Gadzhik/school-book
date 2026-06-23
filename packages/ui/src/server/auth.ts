@@ -124,7 +124,11 @@ export async function refreshMe(): Promise<void> {
   try {
     const user = await authClient(s.token).me();
     setSession({ ...s, user });
-  } catch {
-    /* офлайн — работаем с кэшем */
+  } catch (e) {
+    // 401 — токен протух/невалиден (напр. сменился секрет сервера после сброса
+    // БД): выходим, чтобы показать экран входа. Прочее = офлайн → оставляем кэш.
+    if (e instanceof Error && /\b401\b/.test(e.message)) {
+      logout();
+    }
   }
 }

@@ -26,7 +26,7 @@
   import { syncMarks } from './marks-sync';
   import { syncAll, initAutoSync } from './autosync';
   import { session, logout, refreshMe } from './auth';
-  import { canManage } from './approvals';
+  import { canManage, loadApprovals, manageableUsers } from './approvals';
   import { canUpload } from './upload';
   import { canAudit } from './admin';
   import AuthScreen from './AuthScreen.svelte';
@@ -162,8 +162,15 @@
     if ($connection) void restoreSession();
     // Освежить профиль (статус «ожидает» мог смениться на «активен»).
     if ($session) void refreshMe();
+    // Подтянуть заявки, чтобы показать бейдж с числом ожидающих одобрения.
+    if ($session?.user.status === 'active' && canManage($session.user.role)) {
+      void loadApprovals();
+    }
   });
   onDestroy(stopScan);
+
+  // Число заявок, ожидающих одобрения (для бейджа на кнопке «Заявки»).
+  const pendingCount = $derived($manageableUsers.filter((u) => u.status === 'pending').length);
 
   // Авто-синхронизация при активной сессии (вход/подключение/смена статуса).
   let lastSynced = '';
@@ -335,8 +342,13 @@
           </span>
           <button class="ghost sm" onclick={refreshMe}>Обновить статус</button>
           {#if $session.user.status === 'active' && canManage($session.user.role)}
-            <button class="ghost sm" onclick={() => (showApprovals = !showApprovals)}>
+            <button
+              class="ghost sm approvals-btn"
+              class:has-pending={pendingCount > 0}
+              onclick={() => (showApprovals = !showApprovals)}
+            >
               {showApprovals ? 'Скрыть заявки' : 'Заявки'}
+              {#if pendingCount > 0}<span class="appr-badge">{pendingCount}</span>{/if}
             </button>
           {/if}
           {#if $session.user.status === 'active' && canUpload($session.user.role)}
@@ -694,6 +706,25 @@
   .downloaded {
     color: #2e7d32;
     font-size: 0.8rem;
+  }
+  .approvals-btn {
+    position: relative;
+  }
+  .approvals-btn.has-pending {
+    border-color: var(--accent);
+    color: var(--accent);
+    font-weight: 700;
+  }
+  .appr-badge {
+    display: inline-block;
+    min-width: 1.2rem;
+    margin-left: 0.35rem;
+    padding: 0 6px;
+    border-radius: 999px;
+    background: var(--accent);
+    color: var(--on-accent);
+    font-size: 0.75rem;
+    text-align: center;
   }
   .entries {
     list-style: none;
