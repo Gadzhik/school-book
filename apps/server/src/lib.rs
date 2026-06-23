@@ -27,7 +27,7 @@ use std::sync::Arc;
 
 use axum::body::Body;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
-use axum::extract::{Multipart, Path, Query, Request, State};
+use axum::extract::{DefaultBodyLimit, Multipart, Path, Query, Request, State};
 use axum::http::{header, HeaderMap, StatusCode};
 use axum::middleware::{from_fn_with_state, Next};
 use axum::response::{IntoResponse, Response};
@@ -171,7 +171,12 @@ fn build_router(state: Arc<AppState>, web_dir: Option<PathBuf>) -> Router {
         .route("/api/users/{id}/role", post(set_role))
         .route("/api/users/{id}/password", post(reset_user_password))
         .route("/api/users/{id}", delete(delete_user_admin))
-        .route("/books", post(upload_book))
+        // Лимит тела поднят до 512 МБ: книги (особенно PDF) крупнее дефолтных
+        // 2 МБ axum — иначе аплоад рвётся (на клиенте «NetworkError»).
+        .route(
+            "/books",
+            post(upload_book).layer(DefaultBodyLimit::max(512 * 1024 * 1024)),
+        )
         .route("/api/assignments", get(list_assignments).post(create_assignment))
         .route("/api/assignments/{id}", delete(delete_assignment))
         .route("/api/assignments/{id}/progress", post(assignment_progress))

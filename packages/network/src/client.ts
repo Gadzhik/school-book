@@ -76,10 +76,10 @@ export class LibraryServerClient {
     }
   }
 
-  async #fetch(path: string, init: RequestInit = {}): Promise<Response> {
+  async #fetch(path: string, init: RequestInit = {}, timeoutMs = this.#timeoutMs): Promise<Response> {
     const url = /^https?:\/\//i.test(path) ? path : `${this.baseUrl}${path}`;
     const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), this.#timeoutMs);
+    const t = setTimeout(() => ctrl.abort(), timeoutMs);
     try {
       const res = await fetch(url, {
         ...init,
@@ -231,7 +231,9 @@ export class LibraryServerClient {
     if (meta.subjects?.length) fd.append('subjects', meta.subjects.join(','));
     if (meta.categories?.length) fd.append('categories', meta.categories.join(','));
     // Content-Type не задаём — браузер сам выставит boundary для multipart.
-    const res = await this.#fetch('/books', { method: 'POST', body: fd });
+    // Длинный таймаут: большие книги (PDF на десятки МБ) грузятся по сети
+    // дольше обычного запроса — иначе AbortController рвёт аплоад (NetworkError).
+    const res = await this.#fetch('/books', { method: 'POST', body: fd }, 10 * 60_000);
     return (await res.json()) as { id: string };
   }
 
