@@ -14,6 +14,7 @@ import type {
   LoginPayload,
   AuthResult,
   UserAccount,
+  Role,
   Assignment,
   AssignmentForStudent,
   AssignmentInput,
@@ -166,6 +167,53 @@ export class LibraryServerClient {
   /** Отклонить/заблокировать пользователя (статус → blocked). */
   async rejectUser(id: string): Promise<void> {
     await this.#fetch(`/api/users/${encodeURIComponent(id)}/reject`, { method: 'POST' });
+  }
+
+  /**
+   * Создать пользователя (админ — любая роль; power — teacher/student).
+   * Создаётся сразу активным (без одобрения). Права проверяет сервер.
+   */
+  async createUser(input: {
+    fullName: string;
+    login: string;
+    password: string;
+    role: Role;
+    classes?: string[];
+    subjects?: string[];
+  }): Promise<UserAccount> {
+    return this.#postJson<UserAccount>('/api/users', input);
+  }
+
+  /** Сменить роль пользователя (админ/power; нельзя свою). Сервер шлёт 204. */
+  async setUserRole(id: string, role: Role): Promise<void> {
+    await this.#fetch(`/api/users/${encodeURIComponent(id)}/role`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ role }),
+    });
+  }
+
+  /** Удалить пользователя (админ/power по правам; нельзя себя). */
+  async deleteUser(id: string): Promise<void> {
+    await this.#fetch(`/api/users/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  }
+
+  /** Сменить свой пароль (нужен текущий). Сервер шлёт 204. */
+  async changeMyPassword(oldPassword: string, newPassword: string): Promise<void> {
+    await this.#fetch('/api/me/password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ oldPassword, newPassword }),
+    });
+  }
+
+  /** Сбросить пароль другого пользователя (админ/power; нельзя себя). 204. */
+  async resetUserPassword(id: string, newPassword: string): Promise<void> {
+    await this.#fetch(`/api/users/${encodeURIComponent(id)}/password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ newPassword }),
+    });
   }
 
   /**

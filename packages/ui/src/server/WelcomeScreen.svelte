@@ -16,6 +16,8 @@
   } from './store';
   import { session, logout, refreshMe } from './auth';
   import AuthScreen from './AuthScreen.svelte';
+  // Запуск встроенного сервера (только десктоп; на вебе/мобильном прячется сам).
+  import LocalServerPanel from './LocalServerPanel.svelte';
 
   let address = $state('');
   let token = $state('');
@@ -31,7 +33,21 @@
   onMount(() => {
     if ($connection) void restoreSession();
     if ($session) void refreshMe();
+    void autoConnectSameOrigin();
   });
+
+  // Если читалку отдал сам сервер (открыли http://<сервер>/ в браузере, без
+  // Tauri-оболочки) и подключения ещё нет — автоматически подключаемся к этому
+  // же origin. Тогда вход/админка доступны сразу, без ручного ввода адреса.
+  async function autoConnectSameOrigin() {
+    if ($connection || $serverStatus) return;
+    if (tauriInvoke) return; // нативная оболочка — у неё свой выбор сервера
+    if (typeof window === 'undefined') return;
+    const { protocol, host } = window.location;
+    if (protocol !== 'http:' && protocol !== 'https:') return;
+    if (!host) return;
+    await connect(host);
+  }
 
   async function submit() {
     if (!address.trim()) return;
@@ -94,6 +110,9 @@
       {/if}
 
       {#if $connectError}<p class="error">{$connectError}</p>{/if}
+
+      <!-- Поднять сервер на этой машине (десктоп). На вебе/мобильном не видно. -->
+      <LocalServerPanel />
     {:else if !$session}
       <p class="server-line">
         Сервер: <strong>{$serverStatus.name ?? 'подключён'}</strong>
