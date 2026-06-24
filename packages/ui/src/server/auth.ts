@@ -11,7 +11,7 @@ import {
   type RegisterPayload,
   type LoginPayload,
 } from '@reader/network';
-import { connection } from './store';
+import { connection, authToken } from './store';
 
 /** Сессия: к какому серверу относится, JWT и профиль. */
 interface Session {
@@ -42,6 +42,9 @@ function saveSession(s: Session | null): void {
 
 /** Текущая сессия (null — не вошёл). Загружается из кэша → офлайн-вход. */
 export const session = writable<Session | null>(loadSession());
+// Сразу прокидываем кэшированный JWT в store запросов (каталог фильтруется по
+// пользователю с первого запроса, ещё до refreshMe).
+authToken.set(loadSession()?.token);
 /** Идёт регистрация/вход. */
 export const authBusy = writable(false);
 /** Ошибка авторизации (текст для UI). */
@@ -50,6 +53,7 @@ export const authError = writable('');
 function setSession(s: Session | null): void {
   session.set(s);
   saveSession(s);
+  authToken.set(s?.token); // запросы каталога/скачивания идут с JWT сессии
 }
 
 /** Клиент для авторизации к текущему подключённому серверу. */

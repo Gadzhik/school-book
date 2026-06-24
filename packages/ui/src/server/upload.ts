@@ -4,8 +4,10 @@
  */
 import { writable, get } from 'svelte/store';
 import type { Role } from '@reader/network';
+import { getBookFile, updateBook, type BookMeta } from '@reader/core';
 import { authedClient, session } from './auth';
-import { openCatalog } from './store';
+import { openCatalog, refreshAvailable } from './store';
+import { refreshLibrary } from '../stores';
 
 export const uploading = writable(false);
 export const uploadError = writable('');
@@ -21,6 +23,46 @@ export interface UploadMeta {
   classes?: string[];
   subjects?: string[];
   categories?: string[];
+  /** «Доступна всем» — книгу видят все активные пользователи (ТЗ 6.5). */
+  public?: boolean;
+}
+
+/**
+ * Опубликовать локальную книгу на сервер с её текущими тегами (класс/предмет/
+ * категория). Если книга уже на сервере (есть serverId) — только обновляем теги
+ * (без повторной загрузки файла, без дублей). Иначе — грузим файл и запоминаем
+ * serverId. Так «Добавить книгу» и правка тегов на главной доезжают до сервера,
+ * и ученики класса сразу видят книгу. true — успех.
+ */
+export async function publishToServer(book: BookMeta): Promise<boolean> {
+  const c = authedClient();
+  if (!c || !canUpload(get(session)?.user.role)) return false;
+  uploading.set(true);
+  uploadError.set('');
+  uploadMsg.set('');
+  try {
+    const tags = {
+      classes: book.classes ?? [],
+      subjects: book.subjects ?? [],
+      categories: book.categories ?? [],
+    };
+    if (book.serverId) {
+      await c.updateBookTags(book.serverId, tags);
+    } else {
+      const file = await getBookFile(book.id);
+      const res = await c.uploadBook(file, { fileName: file.name, title: book.title, ...tags });
+      await updateBook(book.id, { serverId: res.id });
+      await refreshLibrary();
+    }
+    uploadMsg.set(`«${book.title}» опубликована на сервере.`);
+    void refreshAvailable();
+    return true;
+  } catch (e) {
+    uploadError.set(e instanceof Error ? e.message : 'Не удалось опубликовать книгу');
+    return false;
+  } finally {
+    uploading.set(false);
+  }
 }
 
 /** Загрузить файл книги на сервер. true — успех. */

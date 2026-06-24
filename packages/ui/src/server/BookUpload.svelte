@@ -12,6 +12,8 @@
   let title = $state('');
   let pickedClasses = $state<string[]>([]);
   let pickedSubjects = $state<string[]>([]);
+  // «Доступна всем» — явный флаг доступа всей школе (ТЗ 6.5).
+  let publicAll = $state(false);
 
   let subjects = $state<SubjectEntry[]>([]);
   let classes = $state<ClassEntry[]>([]);
@@ -32,6 +34,11 @@
     classes = await listClasses();
   });
 
+  // Книга без класса/предмета и без «доступна всем» видна только загрузившему.
+  const restricted = $derived(
+    !publicAll && pickedClasses.length === 0 && pickedSubjects.length === 0,
+  );
+
   function toggle(list: string[], id: string): string[] {
     return list.includes(id) ? list.filter((x) => x !== id) : [...list, id];
   }
@@ -47,12 +54,14 @@
       title: title.trim() || undefined,
       classes: pickedClasses,
       subjects: pickedSubjects,
+      public: publicAll,
     });
     if (ok) {
       file = null;
       title = '';
       pickedClasses = [];
       pickedSubjects = [];
+      publicAll = false;
     }
   }
 </script>
@@ -93,6 +102,17 @@
       {/each}
     </div>
   </div>
+
+  <label class="public-toggle">
+    <input type="checkbox" bind:checked={publicAll} />
+    <span>Доступна всем (вся школа)</span>
+  </label>
+  {#if restricted}
+    <p class="note">
+      Без класса/предмета и без флага «Доступна всем» книгу увидите только вы и
+      администратор. Назначьте класс/предмет или включите «Доступна всем».
+    </p>
+  {/if}
 
   {#if $uploadError}<p class="error">{$uploadError}</p>{/if}
   {#if $uploadMsg}<p class="ok">{$uploadMsg}</p>{/if}
@@ -171,6 +191,24 @@
   .primary:disabled {
     opacity: 0.6;
     cursor: default;
+  }
+  .public-toggle {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0.2rem 0 0.6rem;
+    color: var(--text);
+    cursor: pointer;
+    font-size: 0.9rem;
+  }
+  .note {
+    margin: 0 0 0.7rem;
+    padding: 0.5rem 0.7rem;
+    border: 1px dashed var(--border);
+    border-radius: 8px;
+    color: var(--muted);
+    font-size: 0.82rem;
+    line-height: 1.4;
   }
   .error {
     color: #c0392b;

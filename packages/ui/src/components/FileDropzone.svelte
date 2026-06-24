@@ -2,7 +2,7 @@
   import { get } from 'svelte/store';
   import { addFiles } from '../stores';
   import { session, authedClient } from '../server/auth';
-  import { canUpload, uploadBook, uploadError } from '../server/upload';
+  import { canUpload, publishToServer, uploadError } from '../server/upload';
   import Icon from './Icon.svelte';
 
   let dragging = $state(false);
@@ -13,24 +13,27 @@
     '.epub,.fb2,.fb2.zip,.fbz,.zip,.mobi,.azw3,.kf8,.pdf,.cbz,.cbr';
 
   /**
-   * Куда класть книги. Если пользователь вошёл на сервер и имеет права на
-   * добавление (учитель/старший/админ) — грузим на сервер (их видят ученики).
-   * Иначе — в локальную читалку (офлайн-первое поведение по умолчанию).
+   * Добавление книги. Всегда импортируем локально (получаем авторазметку тегов
+   * и локальную копию для чтения). Если пользователь вошёл на сервер и имеет
+   * права (учитель/старший/админ) — сразу публикуем книгу на сервер с её
+   * тегами, чтобы ученики класса её увидели. Позже теги можно поправить и
+   * нажать «На сервер» на карточке (теги доедут без повторной загрузки).
    */
   async function handleFiles(files: FileList) {
     status = '';
     const role = get(session)?.user.role;
-    if (authedClient() && canUpload(role)) {
-      const arr = Array.from(files);
+    const added = await addFiles(files);
+    if (authedClient() && canUpload(role) && added.length) {
+      status = 'Публикация на сервере…';
       let ok = 0;
-      for (const f of arr) if (await uploadBook(f, {})) ok++;
+      for (const b of added) if (await publishToServer(b)) ok++;
       status =
-        ok === arr.length
-          ? `Загружено на сервер: ${ok}`
-          : `На сервер: ${ok} из ${arr.length}. ${get(uploadError) || ''}`.trim();
-      return;
+        ok === added.length
+          ? `Добавлено и опубликовано на сервере: ${ok}`
+          : `Опубликовано ${ok} из ${added.length}. ${get(uploadError) || ''}`.trim();
+    } else if (added.length) {
+      status = `Добавлено: ${added.length}`;
     }
-    await addFiles(files);
   }
 
   async function onDrop(e: DragEvent) {

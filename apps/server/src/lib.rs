@@ -42,7 +42,7 @@ use tower_http::trace::TraceLayer;
 
 use db::Db;
 use models::{
-    Assignment, AssignmentForStudent, AssignmentProgressReq, AssignmentReq, AuthResponse,
+    Assignment, AssignmentForStudent, AssignmentProgressReq, AssignmentReq, AuthResponse, Book,
     BookmarkSyncItem, DeviceProgress, HighlightSyncItem, LoginReq, RegisterReq, Role, ServerStatus,
     User, UserStatus, WordSyncItem,
 };
@@ -146,6 +146,7 @@ fn build_router(state: Arc<AppState>, web_dir: Option<PathBuf>) -> Router {
     let protected = Router::new()
         .route("/opds", get(opds_root))
         .route("/opds/all", get(opds_all))
+        .route("/opds/mine", get(opds_mine))
         .route("/opds/search", get(opds_search))
         .route("/opds/classes", get(opds_classes))
         .route("/opds/subjects", get(opds_subjects))
@@ -177,6 +178,7 @@ fn build_router(state: Arc<AppState>, web_dir: Option<PathBuf>) -> Router {
             "/books",
             post(upload_book).layer(DefaultBodyLimit::max(512 * 1024 * 1024)),
         )
+        .route("/books/{id}/tags", post(update_book_tags))
         .route("/api/assignments", get(list_assignments).post(create_assignment))
         .route("/api/assignments/{id}", delete(delete_assignment))
         .route("/api/assignments/{id}/progress", post(assignment_progress))
@@ -426,11 +428,25 @@ async fn auth(
     Ok(next.run(req).await)
 }
 
-async fn status(State(st): State<Arc<AppState>>) -> Json<ServerStatus> {
+async fn status(State(st): State<Arc<AppState>>, headers: HeaderMap) -> Json<ServerStatus> {
+    // Для вошедшего пользователя — число ВИДИМЫХ ему книг (а не всего каталога),
+    // чтобы счётчик в клиенте совпадал с тем, что реально доступно. Без JWT
+    // (пинг до входа) — общий счёт.
+    let user = current_user(&st, &headers);
+    let books = if user.is_some() {
+        st.db
+            .all_books_access()
+            .unwrap_or_default()
+            .iter()
+            .filter(|b| can_see(user.as_ref(), b))
+            .count() as i64
+    } else {
+        st.db.count_books()
+    };
     Json(ServerStatus {
         name: st.name.clone(),
         version: VERSION.to_string(),
-        books: st.db.count_books(),
+        books,
         ok: true,
         address: st.address.clone(),
         port: st.port,
@@ -634,6 +650,9 @@ async fn upload_book(
     let mut classes: Vec<String> = Vec::new();
     let mut subjects: Vec<String> = Vec::new();
     let mut categories: Vec<String> = Vec::new();
+    // «Доступна всем» — явный флаг (ТЗ 6.5). По умолчанию выкл: книга без
+    // класса/предмета и без этого флага видна только загрузившему и админу.
+    let mut public = false;
 
     loop {
         let field = match mp.next_field().await {
@@ -653,6 +672,10 @@ async fn upload_book(
             "classes" => classes = csv_vec(&field.text().await.unwrap_or_default()),
             "subjects" => subjects = csv_vec(&field.text().await.unwrap_or_default()),
             "categories" => categories = csv_vec(&field.text().await.unwrap_or_default()),
+            "public" => {
+                let v = field.text().await.unwrap_or_default();
+                public = matches!(v.trim(), "1" | "true" | "on" | "yes");
+            }
             _ => {}
         }
     }
@@ -717,11 +740,64 @@ async fn upload_book(
         &classes.join(","),
         &subjects.join(","),
         &categories.join(","),
+        public,
+        Some(&me.id),
     ) {
         Ok(()) => {
             st.db.log_audit(&me.full_name, "upload", &final_title);
             (StatusCode::CREATED, Json(serde_json::json!({ "id": id }))).into_response()
         }
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
+}
+
+/// Запрос обновления тегов/доступа книги (публикация локальной книги).
+#[derive(Deserialize)]
+struct BookTagsReq {
+    #[serde(default)]
+    classes: Vec<String>,
+    #[serde(default)]
+    subjects: Vec<String>,
+    #[serde(default)]
+    categories: Vec<String>,
+    #[serde(default)]
+    public: bool,
+}
+
+/// Обновить теги/доступ уже загруженной книги (ТЗ 6.5). Права admin/power/
+/// teacher; учитель ограничен своими классами/предметами (как при загрузке).
+/// Нужно, чтобы «Добавить книгу» на главной публиковала книгу с тегами, а
+/// правка тегов локально доезжала до сервера без повторной загрузки файла.
+async fn update_book_tags(
+    State(st): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    Json(req): Json<BookTagsReq>,
+) -> Response {
+    let Some(me) = current_user(&st, &headers) else {
+        return StatusCode::UNAUTHORIZED.into_response();
+    };
+    if me.status != UserStatus::Active || me.role == Role::Student {
+        return (StatusCode::FORBIDDEN, "Нет прав на изменение книг").into_response();
+    }
+    let mut classes = req.classes;
+    let mut subjects = req.subjects;
+    if me.role == Role::Teacher {
+        classes.retain(|c| me.classes.contains(c));
+        subjects.retain(|s| me.subjects.contains(s));
+    }
+    match st.db.update_book_tags(
+        &id,
+        &classes.join(","),
+        &subjects.join(","),
+        &req.categories.join(","),
+        req.public,
+    ) {
+        Ok(true) => {
+            st.db.log_audit(&me.full_name, "retag", &id);
+            StatusCode::NO_CONTENT.into_response()
+        }
+        Ok(false) => StatusCode::NOT_FOUND.into_response(),
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
 }
@@ -1281,20 +1357,73 @@ fn opds_response(xml: String) -> Response {
         .into_response()
 }
 
-/// Корневой навигационный фид (по измерениям + все книги).
-async fn opds_root(State(st): State<Arc<AppState>>) -> Response {
-    opds_response(opds::navigation_root(&st.name))
+/// Видна ли книга пользователю (ТЗ 6.5). Без JWT/неактивный — только «доступна
+/// всем». Админ/power — всё. Учитель — public, свои загрузки, пересечение по
+/// классам ИЛИ предметам. Ученик — public или пересечение по классам.
+fn can_see(user: Option<&User>, b: &db::BookAccess) -> bool {
+    let Some(u) = user else {
+        return b.public;
+    };
+    if u.status != UserStatus::Active {
+        return b.public;
+    }
+    match u.role {
+        Role::Admin | Role::Power => true,
+        Role::Teacher => {
+            b.public
+                || b.owner_id.as_deref() == Some(u.id.as_str())
+                || b.classes.iter().any(|c| u.classes.contains(c))
+                || b.subjects.iter().any(|s| u.subjects.contains(s))
+        }
+        Role::Student => b.public || b.classes.iter().any(|c| u.classes.contains(c)),
+    }
 }
 
-/// Acquisition-фид всех книг.
-async fn opds_all(State(st): State<Arc<AppState>>) -> Response {
-    match st.db.list_books() {
-        Ok(books) => opds_response(opds::acquisition_feed(&st.name, &books)),
-        Err(e) => {
-            tracing::error!("OPDS: {e}");
-            StatusCode::INTERNAL_SERVER_ERROR.into_response()
-        }
-    }
+/// Книги, видимые пользователю из запроса (фильтр по JWT-правам).
+fn visible_books(st: &AppState, headers: &HeaderMap) -> Vec<db::BookAccess> {
+    let user = current_user(st, headers);
+    st.db
+        .all_books_access()
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|b| can_see(user.as_ref(), b))
+        .collect()
+}
+
+/// Извлечь сами книги (Book) из набора доступа — для acquisition-фида.
+fn books_of(access: &[db::BookAccess]) -> Vec<Book> {
+    access.iter().map(|a| a.book.clone()).collect()
+}
+
+/// Корневой навигационный фид (по измерениям + все книги). Пункт «Мои книги»
+/// показываем тем, кто загружает (учитель/power/admin).
+async fn opds_root(State(st): State<Arc<AppState>>, headers: HeaderMap) -> Response {
+    let show_mine = current_user(&st, &headers)
+        .map(|u| matches!(u.role, Role::Admin | Role::Power | Role::Teacher))
+        .unwrap_or(false);
+    opds_response(opds::navigation_root(&st.name, show_mine))
+}
+
+/// Acquisition-фид всех видимых пользователю книг.
+async fn opds_all(State(st): State<Arc<AppState>>, headers: HeaderMap) -> Response {
+    let books = books_of(&visible_books(&st, &headers));
+    opds_response(opds::acquisition_feed(&st.name, &books))
+}
+
+/// Acquisition-фид «Мои книги» — то, что текущий пользователь загрузил сам.
+async fn opds_mine(State(st): State<Arc<AppState>>, headers: HeaderMap) -> Response {
+    let Some(me) = current_user(&st, &headers) else {
+        return StatusCode::UNAUTHORIZED.into_response();
+    };
+    let books: Vec<Book> = st
+        .db
+        .all_books_access()
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|b| b.owner_id.as_deref() == Some(me.id.as_str()))
+        .map(|a| a.book)
+        .collect();
+    opds_response(opds::acquisition_feed(&format!("{} — Мои книги", st.name), &books))
 }
 
 /// Параметры поиска книг.
@@ -1304,67 +1433,103 @@ struct SearchQuery {
     q: String,
 }
 
-/// Поиск книг по названию/автору. Пустой запрос → пустая выдача.
-async fn opds_search(State(st): State<Arc<AppState>>, Query(p): Query<SearchQuery>) -> Response {
-    if p.q.trim().is_empty() {
+/// Поиск по названию/автору среди видимых книг. Пустой запрос → пустая выдача.
+async fn opds_search(
+    State(st): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Query(p): Query<SearchQuery>,
+) -> Response {
+    let needle = p.q.trim().to_lowercase();
+    if needle.is_empty() {
         return opds_response(opds::acquisition_feed(&st.name, &[]));
     }
-    match st.db.search_books(&p.q) {
-        Ok(books) => opds_response(opds::acquisition_feed(&st.name, &books)),
-        Err(e) => {
-            tracing::error!("OPDS search: {e}");
-            StatusCode::INTERNAL_SERVER_ERROR.into_response()
-        }
+    let books: Vec<Book> = visible_books(&st, &headers)
+        .into_iter()
+        .map(|a| a.book)
+        .filter(|b| {
+            b.title.to_lowercase().contains(&needle)
+                || b.author.as_deref().map(|a| a.to_lowercase().contains(&needle)).unwrap_or(false)
+        })
+        .collect();
+    opds_response(opds::acquisition_feed(&st.name, &books))
+}
+
+/// Имя колонки тегов BookAccess по имени измерения OPDS.
+fn dim_tags<'a>(b: &'a db::BookAccess, dim: &str) -> &'a [String] {
+    match dim {
+        "class" => &b.classes,
+        "subject" => &b.subjects,
+        "category" => &b.categories,
+        _ => &[],
     }
 }
 
-/// Навигационный фид со списком значений измерения.
-fn dimension_feed(st: &AppState, dim: &str, title: &str) -> Response {
-    match st.db.distinct_tags(dim) {
-        Ok(values) => opds_response(opds::dimension_list(title, dim, &values)),
-        Err(e) => {
-            tracing::error!("OPDS {dim}: {e}");
-            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+/// Навигационный фид со списком значений измерения (по видимым книгам).
+fn dimension_feed(st: &AppState, headers: &HeaderMap, dim: &str, title: &str) -> Response {
+    let visible = visible_books(st, headers);
+    let mut counts: std::collections::HashMap<String, i64> = std::collections::HashMap::new();
+    for b in &visible {
+        for v in dim_tags(b, dim) {
+            *counts.entry(v.clone()).or_insert(0) += 1;
         }
     }
-}
-
-async fn opds_classes(State(st): State<Arc<AppState>>) -> Response {
-    dimension_feed(&st, "class", "По классам")
-}
-async fn opds_subjects(State(st): State<Arc<AppState>>) -> Response {
-    dimension_feed(&st, "subject", "По предметам")
-}
-async fn opds_categories(State(st): State<Arc<AppState>>) -> Response {
-    dimension_feed(&st, "category", "По категориям")
-}
-
-/// Acquisition-фид книг с данным значением измерения.
-fn tag_feed(st: &AppState, dim: &str, id: &str) -> Response {
-    match st.db.books_by_tag(dim, id) {
-        Ok(books) => {
-            let title = format!("{} — {}", st.name, autotag::label(dim, id));
-            opds_response(opds::acquisition_feed(&title, &books))
-        }
-        Err(e) => {
-            tracing::error!("OPDS {dim}/{id}: {e}");
-            StatusCode::INTERNAL_SERVER_ERROR.into_response()
-        }
+    let mut values: Vec<(String, i64)> = counts.into_iter().collect();
+    if dim == "class" {
+        values.sort_by_key(|(v, _)| v.parse::<i64>().unwrap_or(i64::MAX));
+    } else {
+        values.sort_by(|a, b| a.0.cmp(&b.0));
     }
+    opds_response(opds::dimension_list(title, dim, &values))
 }
 
-async fn opds_by_class(State(st): State<Arc<AppState>>, Path(id): Path<String>) -> Response {
-    tag_feed(&st, "class", &id)
+async fn opds_classes(State(st): State<Arc<AppState>>, headers: HeaderMap) -> Response {
+    dimension_feed(&st, &headers, "class", "По классам")
 }
-async fn opds_by_subject(State(st): State<Arc<AppState>>, Path(id): Path<String>) -> Response {
-    tag_feed(&st, "subject", &id)
+async fn opds_subjects(State(st): State<Arc<AppState>>, headers: HeaderMap) -> Response {
+    dimension_feed(&st, &headers, "subject", "По предметам")
 }
-async fn opds_by_category(State(st): State<Arc<AppState>>, Path(id): Path<String>) -> Response {
-    tag_feed(&st, "category", &id)
+async fn opds_categories(State(st): State<Arc<AppState>>, headers: HeaderMap) -> Response {
+    dimension_feed(&st, &headers, "category", "По категориям")
+}
+
+/// Acquisition-фид видимых книг с данным значением измерения.
+fn tag_feed(st: &AppState, headers: &HeaderMap, dim: &str, id: &str) -> Response {
+    let books: Vec<Book> = visible_books(st, headers)
+        .into_iter()
+        .filter(|b| dim_tags(b, dim).iter().any(|v| v == id))
+        .map(|a| a.book)
+        .collect();
+    let title = format!("{} — {}", st.name, autotag::label(dim, id));
+    opds_response(opds::acquisition_feed(&title, &books))
+}
+
+async fn opds_by_class(State(st): State<Arc<AppState>>, headers: HeaderMap, Path(id): Path<String>) -> Response {
+    tag_feed(&st, &headers, "class", &id)
+}
+async fn opds_by_subject(State(st): State<Arc<AppState>>, headers: HeaderMap, Path(id): Path<String>) -> Response {
+    tag_feed(&st, &headers, "subject", &id)
+}
+async fn opds_by_category(State(st): State<Arc<AppState>>, headers: HeaderMap, Path(id): Path<String>) -> Response {
+    tag_feed(&st, &headers, "category", &id)
 }
 
 /// Раздача файла книги с поддержкой Range (докачка/перемотка — ТЗ 4.7).
+/// Доступ проверяется по правам пользователя (ТЗ 6.5): нельзя скачать по id
+/// книгу, которая пользователю не видна (иначе фильтр каталога обходится).
 async fn download(State(st): State<Arc<AppState>>, Path(id): Path<String>, req: Request) -> Response {
+    let user = current_user(&st, req.headers());
+    let allowed = st
+        .db
+        .all_books_access()
+        .unwrap_or_default()
+        .into_iter()
+        .find(|b| b.book.id == id)
+        .map(|b| can_see(user.as_ref(), &b))
+        .unwrap_or(false);
+    if !allowed {
+        // 404 (не 403), чтобы не раскрывать существование скрытой книги.
+        return StatusCode::NOT_FOUND.into_response();
+    }
     let Ok(Some(path)) = st.db.book_path(&id) else {
         return StatusCode::NOT_FOUND.into_response();
     };
@@ -1495,5 +1660,76 @@ async fn post_words(
     match st.db.upsert_words(&items) {
         Ok(()) => StatusCode::NO_CONTENT,
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn book(public: bool, owner: Option<&str>, classes: &[&str], subjects: &[&str]) -> db::BookAccess {
+        db::BookAccess {
+            book: Book {
+                id: "b".into(),
+                title: "t".into(),
+                author: None,
+                format: "epub".into(),
+                size: 0,
+                added_at: 0,
+            },
+            classes: classes.iter().map(|s| s.to_string()).collect(),
+            subjects: subjects.iter().map(|s| s.to_string()).collect(),
+            categories: vec![],
+            public,
+            owner_id: owner.map(|s| s.to_string()),
+        }
+    }
+
+    fn user(id: &str, role: Role, classes: &[&str], subjects: &[&str]) -> User {
+        User {
+            id: id.into(),
+            role,
+            status: UserStatus::Active,
+            full_name: id.into(),
+            login: id.into(),
+            pw_hash: "x".into(),
+            subjects: subjects.iter().map(|s| s.to_string()).collect(),
+            classes: classes.iter().map(|s| s.to_string()).collect(),
+            created_at: 0,
+        }
+    }
+
+    #[test]
+    fn private_book_hidden_from_unrelated_student() {
+        // Книга 7 класса по алгебре, не public.
+        let b = book(false, Some("teacher1"), &["7"], &["algebra"]);
+        // Ученик 8 класса — не видит (главный баг: раньше видели все).
+        assert!(!can_see(Some(&user("s8", Role::Student, &["8"], &[])), &b));
+        // Ученик 7 класса — видит (его класс).
+        assert!(can_see(Some(&user("s7", Role::Student, &["7"], &[])), &b));
+    }
+
+    #[test]
+    fn public_book_visible_to_everyone() {
+        let b = book(true, Some("teacher1"), &[], &[]);
+        assert!(can_see(Some(&user("s", Role::Student, &["3"], &[])), &b));
+        assert!(can_see(None, &b)); // даже без JWT (по pairing-токену)
+    }
+
+    #[test]
+    fn owner_and_admin_see_own_untagged_upload() {
+        // Книга без тегов и не public — приватная.
+        let b = book(false, Some("teacher1"), &[], &[]);
+        assert!(!can_see(Some(&user("s", Role::Student, &["7"], &[])), &b)); // ученик — нет
+        assert!(!can_see(Some(&user("other", Role::Teacher, &["7"], &["algebra"])), &b)); // чужой учитель — нет
+        assert!(can_see(Some(&user("teacher1", Role::Teacher, &[], &[])), &b)); // загрузивший — да
+        assert!(can_see(Some(&user("a", Role::Admin, &[], &[])), &b)); // админ — да
+    }
+
+    #[test]
+    fn teacher_sees_by_subject() {
+        let b = book(false, Some("teacher1"), &["7"], &["physics"]);
+        // Учитель физики другого класса — видит по предмету.
+        assert!(can_see(Some(&user("t", Role::Teacher, &["9"], &["physics"])), &b));
     }
 }

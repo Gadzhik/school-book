@@ -14,7 +14,7 @@ import {
   type OpdsFeed,
   type OpdsEntry,
 } from '@reader/network';
-import { importServerBook } from '../stores';
+import { importServerBook, books } from '../stores';
 
 /** Сохранённое подключение (адрес + токен пэйринга). */
 interface SavedConnection {
@@ -45,6 +45,14 @@ function persist(conn: SavedConnection | null): void {
 
 /** Текущее подключение (null — не подключён). */
 export const connection = writable<SavedConnection | null>(loadSaved());
+/**
+ * JWT текущей сессии (ставит auth.ts при входе/выходе). Запросы каталога/
+ * скачивания идут с ним — иначе сервер не опознаёт пользователя и отдаёт
+ * только «доступные всем» книги (фильтр по классу/предмету не работает).
+ * Фолбэк — токен пэйринга подключения (для серверов с кодом доступа без
+ * аккаунтов).
+ */
+export const authToken = writable<string | undefined>(undefined);
 /** Статус сервера после успешного пинга. */
 export const serverStatus = writable<ServerStatus | null>(null);
 /** Идёт подключение/загрузка статуса. */
@@ -54,14 +62,31 @@ export const connectError = writable('');
 
 /** Текущий OPDS-фид и его URL (для абсолютизации ссылок). */
 export const catalog = writable<{ feed: OpdsFeed; url: string } | null>(null);
+/**
+ * Стек путей OPDS-навигации (последний — текущий экран каталога). Нужен для
+ * кнопки «Назад» внутри каталога: навигация по разделам — внутренний стейт,
+ * а не смена view, поэтому свайп-назад без стека сразу выходил в библиотеку.
+ */
+export const catalogStack = writable<string[]>([]);
+/** Можно ли вернуться на предыдущий экран каталога. */
+export const canCatalogBack = writable(false);
+catalogStack.subscribe((s) => canCatalogBack.set(s.length > 1));
 /** Идентификаторы книг, что сейчас скачиваются. */
 export const downloading = writable<Set<string>>(new Set());
+/**
+ * Число доступных пользователю книг на сервере, ещё не скачанных локально.
+ * Для бейджа-сигнала в меню («появились доступные книги»).
+ */
+export const availableCount = writable(0);
 
 /** Построить клиента из текущего подключения (null — не подключён). */
 export function currentClient(): LibraryServerClient | null {
   const conn = get(connection);
   if (!conn) return null;
-  return new LibraryServerClient({ baseUrl: conn.baseUrl, name: conn.name }, { token: conn.token });
+  // JWT сессии важнее токена пэйринга — сервер опознаёт пользователя и фильтрует
+  // каталог по правам (класс/предмет/доступна-всем).
+  const token = get(authToken) ?? conn.token;
+  return new LibraryServerClient({ baseUrl: conn.baseUrl, name: conn.name }, { token });
 }
 const client = currentClient;
 
@@ -105,6 +130,7 @@ export async function connect(input: string, token?: string): Promise<boolean> {
     serverStatus.set(status);
     persist(conn);
     await openCatalog();
+    void refreshAvailable();
     return true;
   } catch (e) {
     connectError.set(
@@ -121,6 +147,8 @@ export function disconnect(): void {
   connection.set(null);
   serverStatus.set(null);
   catalog.set(null);
+  catalogStack.set([]);
+  availableCount.set(0);
   connectError.set('');
   persist(null);
 }
@@ -135,16 +163,60 @@ export function serverIdOf(entry: OpdsEntry): string {
  * кнопкой скачивания), чтобы не путать навигацией. Навигация по классам/
  * предметам доступна по ссылкам (openCatalog(href)) и кнопке «По разделам».
  */
-export async function openCatalog(path = '/opds/all'): Promise<void> {
+export async function openCatalog(path = '/opds/all', push = false): Promise<void> {
   const c = client();
   if (!c) return;
   connectError.set('');
   try {
     catalog.set(await c.catalog(path));
+    // push=true — заход в подраздел (кладём в стек); иначе — сброс на корень
+    // просмотра (обновление/поиск/«Все книги»/«По разделам»).
+    catalogStack.update((s) => (push ? [...s, path] : [path]));
   } catch (e) {
     connectError.set(
       e instanceof Error ? `Каталог недоступен: ${e.message}` : 'Каталог недоступен',
     );
+  }
+}
+
+/** Вернуться на предыдущий экран OPDS-каталога (кнопка/жест «Назад»). */
+export async function catalogBack(): Promise<void> {
+  const stack = get(catalogStack);
+  if (stack.length < 2) return;
+  const prev = stack[stack.length - 2];
+  const c = client();
+  if (!c) return;
+  try {
+    catalog.set(await c.catalog(prev));
+    catalogStack.set(stack.slice(0, -1));
+  } catch (e) {
+    connectError.set(
+      e instanceof Error ? `Каталог недоступен: ${e.message}` : 'Каталог недоступен',
+    );
+  }
+}
+
+/**
+ * Обновить счётчик доступных книг (видимых пользователю и ещё не скачанных).
+ * Тихо при отсутствии сети/подключения — офлайн-первый клиент.
+ */
+export async function refreshAvailable(): Promise<void> {
+  const c = client();
+  if (!c) {
+    availableCount.set(0);
+    return;
+  }
+  try {
+    const { feed } = await c.catalog('/opds/all');
+    const downloaded = new Set(
+      get(books).filter((b) => b.serverId).map((b) => b.serverId as string),
+    );
+    const n = feed.entries.filter(
+      (e) => e.acquisitionHref && !downloaded.has(serverIdOf(e)),
+    ).length;
+    availableCount.set(n);
+  } catch {
+    /* офлайн — счётчик не трогаем */
   }
 }
 
@@ -167,6 +239,7 @@ export async function restoreSession(): Promise<void> {
     const status = await c.status();
     serverStatus.set(status);
     await openCatalog();
+    void refreshAvailable();
   } catch {
     serverStatus.set(null);
     connectError.set('Сервер сейчас недоступен. Подключитесь снова.');
@@ -208,6 +281,7 @@ export async function downloadEntry(entry: OpdsEntry): Promise<boolean> {
     // serverId книги — из ссылки скачивания `/books/<id>/file` (для синка прогресса).
     const serverId = /\/books\/([^/]+)\/file/.exec(entry.acquisitionHref)?.[1] ?? entry.id;
     await importServerBook(file, serverId);
+    void refreshAvailable(); // одной доступной книгой меньше — обновить бейдж
     return true;
   } catch (e) {
     connectError.set(

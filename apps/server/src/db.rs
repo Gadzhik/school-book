@@ -2,7 +2,6 @@
 //! нагрузка LAN-сервера невелика, держим блокировку коротко (без .await внутри).
 
 use std::collections::hash_map::DefaultHasher;
-use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -17,6 +16,23 @@ use crate::models::{
 /// Обёртка над соединением SQLite.
 pub struct Db {
     conn: Mutex<Connection>,
+}
+
+/// Книга с данными доступа (для фильтрации каталога по правам — ТЗ 6.5).
+pub struct BookAccess {
+    pub book: Book,
+    pub classes: Vec<String>,
+    pub subjects: Vec<String>,
+    pub categories: Vec<String>,
+    /// «Доступна всем» — видна любому активному пользователю.
+    pub public: bool,
+    /// id загрузившего (None — книга из папки/скана).
+    pub owner_id: Option<String>,
+}
+
+/// Разбить CSV-строку тегов в вектор (без пустых, с тримом).
+fn split_csv(s: &str) -> Vec<String> {
+    s.split(',').map(|x| x.trim().to_string()).filter(|x| !x.is_empty()).collect()
 }
 
 /// Поддерживаемые расширения книг для индексации каталога.
@@ -57,7 +73,9 @@ impl Db {
                  added_at INTEGER NOT NULL,
                  classes TEXT NOT NULL DEFAULT '',
                  subjects TEXT NOT NULL DEFAULT '',
-                 categories TEXT NOT NULL DEFAULT ''
+                 categories TEXT NOT NULL DEFAULT '',
+                 public INTEGER NOT NULL DEFAULT 0,
+                 owner_id TEXT
              );
              CREATE TABLE IF NOT EXISTS progress (
                  book_id TEXT NOT NULL,
@@ -151,6 +169,26 @@ impl Db {
                 [],
             );
         }
+        // Колонки доступа (ТЗ 6.5): public — «доступна всем», owner_id — кто
+        // загрузил. public особый: если колонки не было, помечаем все уже
+        // существующие книги public=1, чтобы не сломать текущий доступ (раньше
+        // каталог отдавал всё всем). Новые книги приватны (public=0) — доступ
+        // задаётся явно классом/предметом или флагом «доступна всем».
+        let has_public: bool = conn
+            .query_row(
+                "SELECT 1 FROM pragma_table_info('books') WHERE name='public'",
+                [],
+                |_| Ok(true),
+            )
+            .unwrap_or(false);
+        if !has_public {
+            conn.execute(
+                "ALTER TABLE books ADD COLUMN public INTEGER NOT NULL DEFAULT 0",
+                [],
+            )?;
+            conn.execute("UPDATE books SET public=1", [])?;
+        }
+        let _ = conn.execute("ALTER TABLE books ADD COLUMN owner_id TEXT", []);
         Ok(Db { conn: Mutex::new(conn) })
     }
 
@@ -176,10 +214,13 @@ impl Db {
             // Автотег для OPDS-навигации по классам/предметам/категориям (5.6).
             let file_name = abs.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
             let tags = crate::autotag::suggest(&file_name, &title, &meta.keywords, &meta.fb2_genres);
+            // Книги, найденные в папке библиотеки (положены админом на сервер
+            // напрямую), считаем доступными всем — без регрессии прежнего
+            // поведения. Загрузка через приложение — приватна по умолчанию.
             conn.execute(
                 "INSERT INTO books
-                   (id,title,author,format,file_path,size,added_at,classes,subjects,categories)
-                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)",
+                   (id,title,author,format,file_path,size,added_at,classes,subjects,categories,public,owner_id)
+                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,1,NULL)",
                 params![
                     id,
                     title,
@@ -199,6 +240,8 @@ impl Db {
     }
 
     /// Добавить книгу в каталог (загрузка через API, ТЗ 6.5). Идемпотентно по id.
+    /// `public` — «доступна всем»; `owner_id` — кто загрузил (для «Мои книги»
+    /// и доступа загрузившему даже без тегов).
     #[allow(clippy::too_many_arguments)]
     pub fn add_book(
         &self,
@@ -211,16 +254,19 @@ impl Db {
         classes: &str,
         subjects: &str,
         categories: &str,
+        public: bool,
+        owner_id: Option<&str>,
     ) -> rusqlite::Result<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
             "INSERT INTO books
-               (id,title,author,format,file_path,size,added_at,classes,subjects,categories)
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)
+               (id,title,author,format,file_path,size,added_at,classes,subjects,categories,public,owner_id)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)
              ON CONFLICT(id) DO UPDATE SET
                  title=excluded.title, author=excluded.author,
                  classes=excluded.classes, subjects=excluded.subjects,
-                 categories=excluded.categories",
+                 categories=excluded.categories, public=excluded.public,
+                 owner_id=excluded.owner_id",
             params![
                 id,
                 title,
@@ -232,51 +278,57 @@ impl Db {
                 classes,
                 subjects,
                 categories,
+                public as i64,
+                owner_id,
             ],
         )?;
         Ok(())
     }
 
-    /// Все книги каталога (для OPDS и /status).
-    pub fn list_books(&self) -> rusqlite::Result<Vec<Book>> {
+    /// Обновить теги/доступ книги (публикация локальной книги на сервер с уже
+    /// проставленными тегами — без повторной загрузки файла). true — обновлено.
+    pub fn update_book_tags(
+        &self,
+        id: &str,
+        classes: &str,
+        subjects: &str,
+        categories: &str,
+        public: bool,
+    ) -> rusqlite::Result<bool> {
+        let conn = self.conn.lock().unwrap();
+        let n = conn.execute(
+            "UPDATE books SET classes=?2, subjects=?3, categories=?4, public=?5 WHERE id=?1",
+            params![id, classes, subjects, categories, public as i64],
+        )?;
+        Ok(n > 0)
+    }
+
+    /// Все книги каталога вместе с данными доступа (теги/public/владелец).
+    /// Фильтрация по правам пользователя — в обработчиках (lib.rs::can_see).
+    pub fn all_books_access(&self) -> rusqlite::Result<Vec<BookAccess>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id,title,author,format,size,added_at FROM books ORDER BY title COLLATE NOCASE",
+            "SELECT id,title,author,format,size,added_at,classes,subjects,categories,public,owner_id
+             FROM books ORDER BY title COLLATE NOCASE",
         )?;
         let rows = stmt.query_map([], |r| {
-            Ok(Book {
-                id: r.get(0)?,
-                title: r.get(1)?,
-                author: r.get(2)?,
-                format: r.get(3)?,
-                size: r.get(4)?,
-                added_at: r.get(5)?,
+            Ok(BookAccess {
+                book: Book {
+                    id: r.get(0)?,
+                    title: r.get(1)?,
+                    author: r.get(2)?,
+                    format: r.get(3)?,
+                    size: r.get(4)?,
+                    added_at: r.get(5)?,
+                },
+                classes: split_csv(&r.get::<_, String>(6)?),
+                subjects: split_csv(&r.get::<_, String>(7)?),
+                categories: split_csv(&r.get::<_, String>(8)?),
+                public: r.get::<_, i64>(9)? != 0,
+                owner_id: r.get(10)?,
             })
         })?;
         rows.collect()
-    }
-
-    /// Поиск книг по подстроке в названии или авторе (регистронезависимо).
-    /// Фильтрация в Rust: `to_lowercase` понимает Unicode, тогда как SQLite
-    /// `LIKE`/`COLLATE NOCASE` регистронезависим только для ASCII (кириллица
-    /// бы не находилась при разном регистре).
-    pub fn search_books(&self, query: &str) -> rusqlite::Result<Vec<Book>> {
-        let needle = query.trim().to_lowercase();
-        if needle.is_empty() {
-            return Ok(Vec::new());
-        }
-        Ok(self
-            .list_books()?
-            .into_iter()
-            .filter(|b| {
-                b.title.to_lowercase().contains(&needle)
-                    || b
-                        .author
-                        .as_deref()
-                        .map(|a| a.to_lowercase().contains(&needle))
-                        .unwrap_or(false)
-            })
-            .collect())
     }
 
     /// Путь файла книги (для раздачи с Range).
@@ -291,63 +343,6 @@ impl Db {
     pub fn count_books(&self) -> i64 {
         let conn = self.conn.lock().unwrap();
         conn.query_row("SELECT COUNT(*) FROM books", [], |r| r.get(0)).unwrap_or(0)
-    }
-
-    /// Различные значения измерения с числом книг (для OPDS-навигации, 5.6).
-    /// dim ∈ {"class","subject","category"}.
-    pub fn distinct_tags(&self, dim: &str) -> rusqlite::Result<Vec<(String, i64)>> {
-        let Some(col) = col_for(dim) else {
-            return Ok(Vec::new());
-        };
-        let conn = self.conn.lock().unwrap();
-        let mut stmt = conn.prepare(&format!("SELECT {col} FROM books"))?;
-        let rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
-        let mut counts: HashMap<String, i64> = HashMap::new();
-        for csv in rows {
-            for v in csv?.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()) {
-                *counts.entry(v.to_string()).or_insert(0) += 1;
-            }
-        }
-        let mut out: Vec<(String, i64)> = counts.into_iter().collect();
-        if dim == "class" {
-            out.sort_by_key(|(v, _)| v.parse::<i64>().unwrap_or(i64::MAX));
-        } else {
-            out.sort_by(|a, b| a.0.cmp(&b.0));
-        }
-        Ok(out)
-    }
-
-    /// Книги с данным значением измерения (для отфильтрованного OPDS-фида).
-    pub fn books_by_tag(&self, dim: &str, value: &str) -> rusqlite::Result<Vec<Book>> {
-        let Some(col) = col_for(dim) else {
-            return Ok(Vec::new());
-        };
-        let conn = self.conn.lock().unwrap();
-        let mut stmt = conn.prepare(&format!(
-            "SELECT id,title,author,format,size,added_at,{col} FROM books
-             ORDER BY title COLLATE NOCASE"
-        ))?;
-        let rows = stmt.query_map([], |r| {
-            Ok((
-                Book {
-                    id: r.get(0)?,
-                    title: r.get(1)?,
-                    author: r.get(2)?,
-                    format: r.get(3)?,
-                    size: r.get(4)?,
-                    added_at: r.get(5)?,
-                },
-                r.get::<_, String>(6)?,
-            ))
-        })?;
-        let mut out = Vec::new();
-        for row in rows {
-            let (book, csv) = row?;
-            if csv.split(',').map(|s| s.trim()).any(|s| s == value) {
-                out.push(book);
-            }
-        }
-        Ok(out)
     }
 
     /// Самый свежий прогресс книги по всем устройствам («продолжить везде»).
@@ -849,16 +844,6 @@ fn map_user(r: &rusqlite::Row) -> rusqlite::Result<User> {
         classes: split(r.get::<_, String>(7)?),
         created_at: r.get(8)?,
     })
-}
-
-/// Имя колонки таблицы books по имени измерения OPDS.
-fn col_for(dim: &str) -> Option<&'static str> {
-    match dim {
-        "class" => Some("classes"),
-        "subject" => Some("subjects"),
-        "category" => Some("categories"),
-        _ => None,
-    }
 }
 
 /// Рекурсивно собрать книги: (rel_path, abs_path, ext, size).

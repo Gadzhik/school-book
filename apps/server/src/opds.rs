@@ -49,10 +49,14 @@ fn nav_entry(s: &mut String, title: &str, href: &str, kind_type: &str) {
 }
 
 /// Корневой навигационный фид: все книги + навигация по измерениям (ТЗ 5.6).
-pub fn navigation_root(server_name: &str) -> String {
+/// `show_mine` — добавить пункт «Мои книги» (для тех, кто загружает контент).
+pub fn navigation_root(server_name: &str, show_mine: bool) -> String {
     let mut s = String::new();
     feed_head(&mut s, server_name, "/opds");
     nav_entry(&mut s, "Все книги", "/opds/all", ACQ_TYPE);
+    if show_mine {
+        nav_entry(&mut s, "Мои книги", "/opds/mine", ACQ_TYPE);
+    }
     nav_entry(&mut s, "По классам", "/opds/classes", NAV_TYPE);
     nav_entry(&mut s, "По предметам", "/opds/subjects", NAV_TYPE);
     nav_entry(&mut s, "По категориям", "/opds/categories", NAV_TYPE);
