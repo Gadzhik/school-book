@@ -34,6 +34,19 @@ export interface UploadMeta {
  * serverId. Так «Добавить книгу» и правка тегов на главной доезжают до сервера,
  * и ученики класса сразу видят книгу. true — успех.
  */
+/**
+ * Подпись тегов книги (классы/предметы/категории, отсортированы). Совпадение с
+ * `book.serverSynced` означает «опубликованное на сервере = текущее локальное».
+ */
+export function tagsSignature(book: BookMeta): string {
+  const norm = (a?: string[]) => [...(a ?? [])].sort();
+  return JSON.stringify({
+    c: norm(book.classes),
+    s: norm(book.subjects),
+    k: norm(book.categories),
+  });
+}
+
 export async function publishToServer(book: BookMeta): Promise<boolean> {
   const c = authedClient();
   if (!c || !canUpload(get(session)?.user.role)) return false;
@@ -46,14 +59,16 @@ export async function publishToServer(book: BookMeta): Promise<boolean> {
       subjects: book.subjects ?? [],
       categories: book.categories ?? [],
     };
+    const sig = tagsSignature(book);
     if (book.serverId) {
       await c.updateBookTags(book.serverId, tags);
+      await updateBook(book.id, { serverSynced: sig });
     } else {
       const file = await getBookFile(book.id);
       const res = await c.uploadBook(file, { fileName: file.name, title: book.title, ...tags });
-      await updateBook(book.id, { serverId: res.id });
-      await refreshLibrary();
+      await updateBook(book.id, { serverId: res.id, serverSynced: sig });
     }
+    await refreshLibrary();
     uploadMsg.set(`«${book.title}» опубликована на сервере.`);
     void refreshAvailable();
     return true;

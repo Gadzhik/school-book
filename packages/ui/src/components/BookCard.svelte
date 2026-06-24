@@ -3,7 +3,7 @@
   import { formatLabel, type BookMeta } from '@reader/core';
   import { view, removeBook } from '../stores';
   import { session, authedClient } from '../server/auth';
-  import { canUpload, publishToServer, uploadError } from '../server/upload';
+  import { canUpload, publishToServer, tagsSignature, uploadError } from '../server/upload';
   import Icon from './Icon.svelte';
 
   interface Props {
@@ -20,6 +20,9 @@
   const canPublish = $derived(!!authedClient() && canUpload(role));
   let publishing = $state(false);
   let publishMsg = $state('');
+  // Синхронизирована ли книга с сервером: есть serverId и теги не менялись после
+  // последней публикации. Тогда кнопка показывает «✓ На сервере», а не «Обновить».
+  const synced = $derived(!!book.serverId && book.serverSynced === tagsSignature(book));
 
   async function onPublish(e: MouseEvent) {
     e.stopPropagation();
@@ -73,8 +76,16 @@
       </div>
     {/if}
     {#if canPublish}
-      <button class="publish" onclick={onPublish} disabled={publishing} title="Опубликовать на сервере с текущими тегами">
-        {publishing ? 'Публикация…' : publishMsg || (book.serverId ? 'Обновить на сервере' : 'На сервер')}
+      <button
+        class="publish"
+        class:synced
+        onclick={onPublish}
+        disabled={publishing}
+        title={synced ? 'Уже на сервере (нажмите, чтобы перезалить)' : 'Опубликовать на сервере с текущими тегами'}
+      >
+        {publishing
+          ? 'Публикация…'
+          : publishMsg || (synced ? '✓ На сервере' : book.serverId ? 'Обновить на сервере' : 'На сервер')}
       </button>
     {/if}
   </div>
@@ -170,6 +181,10 @@
   .publish:disabled {
     opacity: 0.6;
     cursor: default;
+  }
+  .publish.synced {
+    border-color: #2e9e5b;
+    color: #2e9e5b;
   }
   .progress {
     margin-top: 0.5rem;
