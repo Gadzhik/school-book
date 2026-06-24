@@ -222,7 +222,15 @@ export class LibraryServerClient {
    */
   async uploadBook(
     file: Blob,
-    meta: { fileName?: string; title?: string; classes?: string[]; subjects?: string[]; categories?: string[] } = {},
+    meta: {
+      fileName?: string;
+      title?: string;
+      classes?: string[];
+      subjects?: string[];
+      categories?: string[];
+      /** «Доступна всем» — книгу видят все активные пользователи (ТЗ 6.5). */
+      public?: boolean;
+    } = {},
   ): Promise<{ id: string }> {
     const fd = new FormData();
     fd.append('file', file, meta.fileName || (file as File).name || 'book');
@@ -230,11 +238,32 @@ export class LibraryServerClient {
     if (meta.classes?.length) fd.append('classes', meta.classes.join(','));
     if (meta.subjects?.length) fd.append('subjects', meta.subjects.join(','));
     if (meta.categories?.length) fd.append('categories', meta.categories.join(','));
+    fd.append('public', meta.public ? '1' : '0');
     // Content-Type не задаём — браузер сам выставит boundary для multipart.
     // Длинный таймаут: большие книги (PDF на десятки МБ) грузятся по сети
     // дольше обычного запроса — иначе AbortController рвёт аплоад (NetworkError).
     const res = await this.#fetch('/books', { method: 'POST', body: fd }, 10 * 60_000);
     return (await res.json()) as { id: string };
+  }
+
+  /**
+   * Обновить теги/доступ уже загруженной книги (публикация локальной книги с
+   * тегами без повторной загрузки файла). Права проверяет сервер.
+   */
+  async updateBookTags(
+    id: string,
+    tags: { classes?: string[]; subjects?: string[]; categories?: string[]; public?: boolean } = {},
+  ): Promise<void> {
+    await this.#fetch(`/books/${encodeURIComponent(id)}/tags`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        classes: tags.classes ?? [],
+        subjects: tags.subjects ?? [],
+        categories: tags.categories ?? [],
+        public: tags.public ?? false,
+      }),
+    });
   }
 
   // --- Задания (ТЗ Часть 6, п.6.5) ---

@@ -1,6 +1,9 @@
 <script lang="ts">
+  import { get } from 'svelte/store';
   import { formatLabel, type BookMeta } from '@reader/core';
   import { view, removeBook } from '../stores';
+  import { session, authedClient } from '../server/auth';
+  import { canUpload, publishToServer, uploadError } from '../server/upload';
   import Icon from './Icon.svelte';
 
   interface Props {
@@ -11,6 +14,23 @@
   const { book, ontag }: Props = $props();
 
   const percent = $derived(Math.round((book.progress ?? 0) * 100));
+
+  // Публикация на сервер доступна тем, кто управляет контентом и подключён.
+  const role = $derived($session?.user.role);
+  const canPublish = $derived(!!authedClient() && canUpload(role));
+  let publishing = $state(false);
+  let publishMsg = $state('');
+
+  async function onPublish(e: MouseEvent) {
+    e.stopPropagation();
+    if (publishing) return;
+    publishing = true;
+    publishMsg = '';
+    const ok = await publishToServer(book);
+    publishMsg = ok ? '✓ на сервере' : get(uploadError) || 'ошибка';
+    publishing = false;
+    if (ok) setTimeout(() => (publishMsg = ''), 2500);
+  }
 
   function open() {
     view.set({ name: 'reader', bookId: book.id });
@@ -51,6 +71,11 @@
       <div class="progress" aria-label={`Прочитано ${percent}%`}>
         <div class="bar" style:width={`${percent}%`}></div>
       </div>
+    {/if}
+    {#if canPublish}
+      <button class="publish" onclick={onPublish} disabled={publishing} title="Опубликовать на сервере с текущими тегами">
+        {publishing ? 'Публикация…' : publishMsg || (book.serverId ? 'Обновить на сервере' : 'На сервер')}
+      </button>
     {/if}
   </div>
   <div class="actions">
@@ -129,6 +154,22 @@
     margin: 0.2rem 0 0;
     font-size: 0.8rem;
     color: var(--muted);
+  }
+  .publish {
+    margin-top: 0.5rem;
+    width: 100%;
+    padding: 0.35rem 0.5rem;
+    border: 1px solid var(--accent);
+    border-radius: 8px;
+    background: transparent;
+    color: var(--accent);
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .publish:disabled {
+    opacity: 0.6;
+    cursor: default;
   }
   .progress {
     margin-top: 0.5rem;

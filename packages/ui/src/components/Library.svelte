@@ -6,6 +6,7 @@
   import { loadTaxonomy, filteredBooks, filterActive } from '../classification';
   import { dueCount, refreshWords } from '../words/store';
   import { session, logout } from '../server/auth';
+  import { availableCount, refreshAvailable } from '../server/store';
 
   // Управление книгами (добавить/сканировать) — не для ученика (ТЗ 6.1).
   const role = $derived($session?.user.role);
@@ -33,6 +34,7 @@
   onMount(() => {
     void loadTaxonomy();
     void refreshWords();
+    void refreshAvailable(); // бейдж новых книг на «Сетевой библиотеке»
     stats = getReadingStats();
   });
 </script>
@@ -42,7 +44,10 @@
     <div>
       <h1>Моя библиотека</h1>
       {#if $session}
-        <p class="sub">{$session.user.fullName} · {ROLE_LABEL[role ?? ''] ?? role}</p>
+        {@const roleLabel = ROLE_LABEL[role ?? ''] ?? role}
+        <p class="sub">
+          {$session.user.fullName}{#if roleLabel !== $session.user.fullName} · {roleLabel}{/if}
+        </p>
       {:else}
         <p class="sub">Книги хранятся только на этом устройстве</p>
       {/if}
@@ -65,7 +70,8 @@
       </button>
       <button class="words-btn" onclick={() => view.set({ name: 'server' })}>
         <Icon name="book" size={18} />
-        Сервер
+        Сетевая библиотека
+        {#if $availableCount > 0}<span class="badge">{$availableCount}</span>{/if}
       </button>
       {#if canManageBooks}
         <button class="scan-btn" onclick={() => startScanner()}>
@@ -102,7 +108,7 @@
         {#if canManageBooks}
           <p class="empty">Пока пусто. Добавьте первую книгу — EPUB, FB2 или PDF.</p>
         {:else}
-          <p class="empty">Книг пока нет. Скачайте книги класса на экране «Сервер».</p>
+          <p class="empty">Книг пока нет. Скачайте книги класса на экране «Сетевая библиотека».</p>
         {/if}
       {:else if $filteredBooks.length === 0 && $filterActive}
         <p class="empty">Под фильтр ничего не подходит. Измените условия.</p>

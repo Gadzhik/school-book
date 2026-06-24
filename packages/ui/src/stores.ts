@@ -166,19 +166,24 @@ function collectReview(res: ImportResult, into: ImportReviewItem[]): void {
   }
 }
 
-/** Добавить файлы в библиотеку и обновить список. */
-export async function addFiles(files: FileList | File[]): Promise<void> {
+/** Добавить файлы в библиотеку и обновить список. Возвращает импортированные
+ *  книги (нужно вызывающему, напр. для публикации на сервер). */
+export async function addFiles(files: FileList | File[]): Promise<BookMeta[]> {
   const review: ImportReviewItem[] = [];
+  const added: BookMeta[] = [];
   const preferPandoc = get(settings).pandocDocs;
   for (const file of Array.from(files)) {
     try {
-      collectReview(await importFile(file, { preferPandoc }), review);
+      const res = await importFile(file, { preferPandoc });
+      added.push(res.book);
+      collectReview(res, review);
     } catch (err) {
       console.error('Не удалось добавить файл', file.name, err);
     }
   }
   await refreshLibrary();
   if (review.length) importReview.update((cur) => [...review, ...cur]);
+  return added;
 }
 
 /**

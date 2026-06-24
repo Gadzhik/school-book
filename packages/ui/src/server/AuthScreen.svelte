@@ -7,9 +7,53 @@
   import { onMount } from 'svelte';
   import { listSubjects, listClasses, type SubjectEntry, type ClassEntry } from '@reader/core';
   import { register, login, authBusy, authError } from './auth';
+  import { serverStatus, connecting, connectError, connect, disconnect } from './store';
 
   let mode = $state<'login' | 'register'>('login');
   let role = $state<'student' | 'teacher'>('student');
+
+  // --- Подключение к серверу (объединено с входом/регистрацией) ---
+  // Поля сервера показываем, пока не подключены; submit входа/регистрации сам
+  // сначала подключается к серверу, потом авторизуется — один экран, один шаг.
+  let address = $state('');
+  let token = $state('');
+  const connected = $derived(!!$serverStatus);
+
+  // Поиск серверов в LAN — только в нативной оболочке (Tauri). __TAURI__
+  // читаем лениво (может появиться позже импорта модуля).
+  interface DiscoveredServer { baseUrl: string; name?: string }
+  function tauriInvoke(): undefined | (<T>(cmd: string) => Promise<T>) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return typeof window !== 'undefined' ? (window as any).__TAURI__?.core?.invoke : undefined;
+  }
+  let hasTauri = $state(false);
+  let discovered = $state<DiscoveredServer[]>([]);
+  let discovering = $state(false);
+
+  async function discover() {
+    const invoke = tauriInvoke();
+    if (!invoke || discovering) return;
+    discovering = true;
+    connectError.set('');
+    try {
+      discovered = await invoke<DiscoveredServer[]>('discover_servers');
+      if (discovered.length === 0) connectError.set('Серверы в сети не найдены.');
+    } catch {
+      connectError.set('Поиск не удался.');
+    } finally {
+      discovering = false;
+    }
+  }
+
+  /** Убедиться, что подключены к серверу (иначе подключиться по введённому адресу). */
+  async function ensureConnected(): Promise<boolean> {
+    if (connected) return true;
+    if (!address.trim()) {
+      connectError.set('Введите адрес сервера школы.');
+      return false;
+    }
+    return await connect(address, token);
+  }
 
   // Общие поля
   let fullName = $state('');
@@ -27,6 +71,7 @@
   onMount(async () => {
     subjects = await listSubjects();
     classes = await listClasses();
+    hasTauri = !!tauriInvoke();
   });
 
   function toggle(list: string[], id: string): string[] {
@@ -34,7 +79,9 @@
   }
 
   async function submit() {
-    if ($authBusy) return;
+    if ($authBusy || $connecting) return;
+    // Сначала подключаемся к серверу (если ещё не), затем авторизуемся.
+    if (!(await ensureConnected())) return;
     if (mode === 'login') {
       await login({ login: userLogin.trim(), password });
       return;
@@ -52,6 +99,42 @@
 </script>
 
 <section class="auth">
+  {#if connected}
+    <p class="server-line">
+      Сервер: <strong>{$serverStatus?.name ?? 'подключён'}</strong>
+      <button class="link" onclick={disconnect}>сменить</button>
+    </p>
+  {:else}
+    <div class="srv">
+      <input
+        type="text"
+        bind:value={address}
+        placeholder="Адрес сервера школы, напр. 192.168.1.10:9700"
+      />
+      <input type="text" bind:value={token} placeholder="Код доступа (если нужен)" />
+      <div class="srv-actions">
+        {#if hasTauri}
+          <button type="button" class="ghost" onclick={discover} disabled={discovering}>
+            {discovering ? 'Поиск…' : 'Найти сервер в сети'}
+          </button>
+        {/if}
+        <button type="button" class="ghost" onclick={() => (address = '10.0.2.2:9700')}>
+          Android-эмулятор
+        </button>
+      </div>
+      {#if discovered.length}
+        <ul class="discovered">
+          {#each discovered as srv (srv.baseUrl)}
+            <li>
+              <span class="d-name">{srv.name ?? srv.baseUrl}</span>
+              <button type="button" class="link" onclick={() => connect(srv.baseUrl)}>выбрать</button>
+            </li>
+          {/each}
+        </ul>
+      {/if}
+    </div>
+  {/if}
+
   <div class="tabs">
     <button class:active={mode === 'login'} onclick={() => (mode = 'login')}>Вход</button>
     <button class:active={mode === 'register'} onclick={() => (mode = 'register')}>Регистрация</button>
@@ -132,10 +215,17 @@
     </fieldset>
   {/if}
 
+  {#if $connectError}<p class="error">{$connectError}</p>{/if}
   {#if $authError}<p class="error">{$authError}</p>{/if}
 
-  <button class="primary" onclick={submit} disabled={$authBusy}>
-    {$authBusy ? 'Подождите…' : mode === 'login' ? 'Войти' : 'Зарегистрироваться'}
+  <button class="primary" onclick={submit} disabled={$authBusy || $connecting}>
+    {$connecting
+      ? 'Подключение…'
+      : $authBusy
+        ? 'Подождите…'
+        : mode === 'login'
+          ? 'Войти'
+          : 'Зарегистрироваться'}
   </button>
 
   {#if mode === 'register'}
@@ -153,6 +243,77 @@
     border: 1px solid var(--border);
     border-radius: 14px;
     background: var(--surface);
+  }
+  .srv {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .srv input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 0.55rem 0.7rem;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg);
+    color: var(--text);
+    font-size: 1rem;
+  }
+  .srv-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+  .ghost {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text);
+    padding: 0.5rem 0.8rem;
+    cursor: pointer;
+    font-size: 0.9rem;
+  }
+  .ghost:disabled {
+    opacity: 0.6;
+    cursor: default;
+  }
+  .server-line {
+    margin: 0 0 1rem;
+    color: var(--muted);
+    font-size: 0.9rem;
+  }
+  .link {
+    border: none;
+    background: none;
+    color: var(--accent);
+    cursor: pointer;
+    text-decoration: underline;
+    font: inherit;
+  }
+  .discovered {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+  }
+  .discovered li {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.45rem 0.6rem;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg);
+  }
+  .d-name {
+    font-weight: 600;
+    color: var(--text);
   }
   .tabs {
     display: flex;

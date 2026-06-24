@@ -16,6 +16,8 @@
     connect,
     disconnect,
     openCatalog,
+    catalogBack,
+    canCatalogBack,
     searchCatalog,
     serverIdOf,
     restoreSession,
@@ -96,6 +98,11 @@
     active: 'активен',
     blocked: 'заблокирован',
   };
+  // Подпись роли; скрываем, если совпадает с ФИО (напр. встроенный
+  // «Администратор» — чтобы не дублировать одно и то же слово).
+  const userRoleLabel = $derived(
+    $session ? (ROLE_LABEL[$session.user.role] ?? $session.user.role) : '',
+  );
 
   let wordsMsg = $state('');
   let wordsSyncing = $state(false);
@@ -129,19 +136,24 @@
   let token = $state('');
 
   // Нативная оболочка (Tauri) умеет mDNS-поиск серверов; в вебе кнопки нет.
+  // __TAURI__ инжектится оболочкой и может появиться позже импорта модуля —
+  // читаем лениво (функцией), флаг показа кнопки ставим в onMount.
   interface DiscoveredServer { baseUrl: string; name?: string; version?: string }
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const tauriInvoke: undefined | (<T>(cmd: string) => Promise<T>) =
-    typeof window !== 'undefined' ? (window as any).__TAURI__?.core?.invoke : undefined;
+  function tauriInvoke(): undefined | (<T>(cmd: string) => Promise<T>) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return typeof window !== 'undefined' ? (window as any).__TAURI__?.core?.invoke : undefined;
+  }
+  let hasTauri = $state(false);
   let discovered = $state<DiscoveredServer[]>([]);
   let discovering = $state(false);
 
   async function discover() {
-    if (!tauriInvoke || discovering) return;
+    const invoke = tauriInvoke();
+    if (!invoke || discovering) return;
     discovering = true;
     connectError.set('');
     try {
-      discovered = await tauriInvoke<DiscoveredServer[]>('discover_servers');
+      discovered = await invoke<DiscoveredServer[]>('discover_servers');
       if (discovered.length === 0) connectError.set('Серверы в сети не найдены.');
     } catch {
       connectError.set('Поиск не удался.');
@@ -158,6 +170,7 @@
   let rafId = 0;
 
   onMount(() => {
+    hasTauri = !!tauriInvoke();
     initAutoSync(); // авто-синк при возврате сети
     if ($connection) void restoreSession();
     // Освежить профиль (статус «ожидает» мог смениться на «активен»).
@@ -267,7 +280,7 @@
         {#if qrSupported && !scanning}
           <button class="ghost" onclick={startScan}>Сканировать QR</button>
         {/if}
-        {#if tauriInvoke}
+        {#if hasTauri}
           <button class="ghost" onclick={discover} disabled={discovering}>
             {discovering ? 'Поиск…' : 'Найти серверы (LAN)'}
           </button>
@@ -332,7 +345,9 @@
       {#if $session}
         <div class="user-bar">
           <span class="u-name">{$session.user.fullName}</span>
-          <span class="u-role">{ROLE_LABEL[$session.user.role] ?? $session.user.role}</span>
+          {#if userRoleLabel !== $session.user.fullName}
+            <span class="u-role">{userRoleLabel}</span>
+          {/if}
           <span
             class="u-status"
             class:pending={$session.user.status === 'pending'}
@@ -423,11 +438,21 @@
           <button class="primary sm" onclick={runSearch}>Найти</button>
           <button class="ghost sm" onclick={clearSearch}>Все книги</button>
           <button class="ghost sm" onclick={() => openCatalog('/opds')}>По разделам</button>
+          {#if canUpload($session.user.role)}
+            <button class="ghost sm" onclick={() => openCatalog('/opds/mine')}>Мои книги</button>
+          {/if}
         </div>
       {/if}
 
       {#if $session && $session.user.status !== 'pending' && $catalog}
-        <h2 class="feed-title">{$catalog.feed.title}</h2>
+        <div class="feed-head">
+          {#if $canCatalogBack}
+            <button class="ghost sm" onclick={catalogBack}>
+              <Icon name="close" size={16} /> Назад
+            </button>
+          {/if}
+          <h2 class="feed-title">{$catalog.feed.title}</h2>
+        </div>
         {#if $catalog.feed.entries.length === 0}
           <p class="muted">Каталог пуст.</p>
         {/if}
@@ -467,7 +492,7 @@
               {:else}
                 {@const href = navHref(entry)}
                 {#if href}
-                  <button class="ghost sm" onclick={() => openCatalog(href)}>Открыть</button>
+                  <button class="ghost sm" onclick={() => openCatalog(href, true)}>Открыть</button>
                 {/if}
               {/if}
             </li>
@@ -682,10 +707,16 @@
     color: var(--muted);
     font-size: 0.88rem;
   }
+  .feed-head {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin: 0.5rem 0;
+  }
   .feed-title {
     font-size: 1.1rem;
     color: var(--text);
-    margin: 0.5rem 0;
+    margin: 0;
   }
   .search-bar {
     display: flex;
