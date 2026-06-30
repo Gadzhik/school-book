@@ -33,6 +33,7 @@ apps/server/target/
 *.db-shm
 apps/server/data/
 apps/server/library/
+apps/server/rt_lib/
 
 # ТЗ и приватные спеки (по решению владельца — не публиковать)
 chitalka_promt_i_tehplan.md
