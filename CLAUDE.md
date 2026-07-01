@@ -42,6 +42,16 @@
 (если собирать мобилку). Lock-файлы (`pnpm-lock.yaml`, `Cargo.lock`) — в репо, не
 бампать без нужды, чтобы версии не разъехались между ОС.
 
+> **⚠️ Kubuntu + NTFS-раздел (важно, читать перед `pnpm install`):** если репо лежит
+> на NTFS-разделе Windows (ntfs3), **`pnpm install` там ЗАВИСАЕТ** на линковке
+> node_modules (дедлок; проверено 2026-07-01). Rust/`cargo check` на ntfs3 при этом
+> работает. Решение: **JS-разработка идёт из ext4-копии `~/school_book`** (полный rsync
+> репо на ext4), а git/сервер/данные — в NTFS-папке. Синк — через git (`origin` GitHub +
+> локальный remote `ntfs`). Подробности и раскладка — в `PROJECT_STATE.md` (запись
+> 2026-07-01). Тулчейн Kubuntu уже поставлен: Node 22.21.0 (nvm), pnpm 10.20.0, Rust
+> 1.96.1, JDK-21 (`~/Android/jdk-*`), Android SDK/NDK (`~/Android/Sdk`) — env в
+> `~/.zshrc`/`~/.bashrc`.
+
 ## Рабочие правила (важно)
 
 - **Билды — только по явной просьбе.** Не запускать `tauri android build`/release/
