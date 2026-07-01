@@ -178,3 +178,12 @@
     Git-настройка: у обеих копий `origin` = `git@github.com:Gadzhik/school-book.git` (SSH),
     в каждом репо `core.sshCommand` с явным ключом (ssh-agent на этой машине отказывался
     подписывать); плюс прямые локальные remotes `ntfs`↔`ext4` для синка без GitHub.
+  - **Автосинк через хук Claude Code (Kubuntu).** В `~/.claude/settings.json` (глобальный,
+    Linux-only — Windows читает свой `%USERPROFILE%\.claude`, поэтому не заденет) добавлены
+    хуки `SessionStart` и `Stop`: асинхронно (в фоне, не тормозя ответы) запускают
+    `~/sb-sync`, но только если cwd содержит `school_book` (в других проектах no-op).
+    `~/sb-sync` защищён `flock` от параллельных запусков. Итог: после каждого хода Claude
+    и на старте сессии обе копии + GitHub синхронизируются сами. Ручной запуск —
+    `~/sb-sync`. Если хук не подхватился — открыть `/hooks` один раз или перезапустить
+    Claude Code (перечитает конфиг). Скрипт `~/sb-sync` и `~/.claude/settings.json` — вне
+    репо, живут только на этой Kubuntu-машине.
