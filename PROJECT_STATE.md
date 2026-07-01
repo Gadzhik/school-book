@@ -5,7 +5,7 @@
 > Источник истины по требованиям — `chitalka_promt_i_tehplan.md` (в .gitignore!,
 > перенести вручную) и `feature_skaner_knig.md`. Сводка стека — `CLAUDE.md`.
 
-Последнее обновление: 2026-06-30 (Windows).
+Последнее обновление: 2026-07-01 (Kubuntu).
 
 ---
 
@@ -106,3 +106,64 @@
   преемственности (готовимся запускать проект из Kubuntu). Зафиксировано: ветка
   `master`, текущий фронт — Часть 6 (аккаунты/доступ по классам/публикация/загрузка
   на сервер). `apps/server/rt_lib/` добавлен в .gitignore как рантайм-данные.
+- **2026-07-01 (Kubuntu):** первый запуск из Kubuntu. Раскладка дисков: Linux `/` на
+  `nvme1n1` (LUKS-ext4 `kubuntu_2604`); проект — на `nvme0n1p3` **NTFS** (это диск
+  Windows, рядом BitLocker/EFI). Правило: **ничего разрушительного на nvme0n1 не
+  делать**, весь тулчейн ставить в `$HOME` (ext4). Установлено под Linux:
+  **pnpm 10.20.0** (через corepack, node остаётся v20.20.2 — в nvm ещё есть v26.3.0;
+  Windows был на v22.21.0, engines не заданы, для Vite/Svelte 5 v20 LTS ок),
+  **Rust 1.96.1** (rustup в `~/.cargo`/`~/.rustup`, `. "$HOME/.cargo/env"` прописан в
+  `~/.zshrc` и `~/.bashrc`). C-тулчейн уже был: gcc 15, build-essential, pkg-config,
+  make, curl. НЕ ставилось (только для APK): JDK-21 (в системе Java 25), Android SDK/NDK.
+  НЕ выполнялось: `pnpm install` (перезапишет node_modules с Windows-бинарями на NTFS —
+  ждём явной команды), `cargo check` (тяжёлая компиляция + пишет в target/ на NTFS).
+  **Сверка ТЗ Часть 6:** по ТЗ (`chitalka_promt_i_tehplan.md`, п.6.6) все модули 1–9 +
+  хвост отмечены `[x]`, «полностью реализована (2026-06-21)». Код сервера это
+  подтверждает (grep: assignments/jwt/bookmarks/audit/highlights/register/argon2/backup/
+  /me//login присутствуют). Т.е. по букве ТЗ Часть 6 закрыта; открытые пункты в блоке
+  «TODO» выше — это возможные доработки СВЕРХ ТЗ (роли/права тонко, синк по аккаунту
+  вместо deviceId, проверка мобилки с auth-флоу), а не невыполненные требования.
+- **2026-07-01 (Kubuntu), продолжение — тулчейн доустановлен + ⚠️ важный вывод по NTFS:**
+  Доустановлено под Linux (всё в `$HOME`/ext4): **Node 22.21.0** (nvm default, pnpm
+  переактивирован через corepack), **rustup android-таргеты** (aarch64/armv7/i686/
+  x86_64-linux-android), **JDK-21** Temurin 21.0.11 → `~/Android/jdk-21.0.11+10`,
+  **Android SDK** → `~/Android/Sdk` (platform-36, build-tools 36.0.0, platform-tools
+  adb 1.0.41, **NDK r28c 28.2.13676358**; проект хочет compileSdk/targetSdk 36, minSdk 24).
+  Env прописан в `~/.zshrc`+`~/.bashrc`: `JAVA_HOME`(→JDK-21), `ANDROID_HOME`,
+  `ANDROID_SDK_ROOT`, `NDK_HOME`, PATH(cmdline-tools+platform-tools). Команда `java`
+  осознанно НЕ перекрыта глобально (остаётся системная 25; gradle/AGP берёт JAVA_HOME).
+  - **⚠️ NTFS/ntfs3 — pnpm install НЕ РАБОТАЕТ в папке проекта.** Раздел смонтирован
+    `ntfs3` (kernel-драйвер, `uid/gid=1000,acl,prealloc`). `pnpm install` стабильно
+    **дедлочится на фазе линковки node_modules** (потоки в futex/ep_poll, 0% CPU,
+    0 записей минутами — это не «медленно», а зависание). Проверено на всех вариантах:
+    isolated/hoisted, hardlink/copy, store на ntfs3 и на ext4. При этом одиночные
+    `ln -s`/`ln` на ntfs3 работают мгновенно, а `cargo check` сервера на ntfs3 —
+    **проходит (exit 0)**. Т.е. Rust на ntfs3 ок; проблема узко в bulk-создании
+    node_modules (много тысяч мелких файлов/симлинков конкурентно) на ntfs3.
+    Симлинк node_modules→ext4 не помогает: pnpm сам управляет жизненным циклом
+    node_modules и ломает/удаляет таргет (isolated → ENOTDIR, hoisted → рвётся).
+    На чистом **ext4 всё ставится за 1.4с** и работает идеально (esbuild postinstall Done).
+    ⇒ **Для JS-разработки на Kubuntu node_modules должен жить на ext4, не на этом NTFS.**
+    Варианты (решить с владельцем): (a) держать рабочую JS-копию репо на ext4 (git/сервер
+    можно оставить на NTFS); (b) bind-mount ext4→`node_modules` через fstab (нужен sudo);
+    (c) тюнинг монтирования/ntfs-3g. Глобальный конфиг pnpm откатан к дефолту (воркэраунд
+    hoisted/copy на ntfs3 всё равно не спасал, а на ext4 он ломал esbuild).
+  - **Проверки (dev-checks) — ВСЕ ЗЕЛЁНЫЕ** (JS-часть прогнана в ext4-зеркале `~/sb_check`,
+    исходники те же; Rust — на реальном дереве):
+    web `svelte-check` 565 файлов **0 ERRORS 0 WARNINGS**; `@reader/network` `tsc --noEmit`
+    **0 ошибок**; `vitest` **19/19 passed** (network sync, core readability/bookmarks/autotag);
+    `cargo check` сервера **exit 0**. Замечание: build-scripts `canvas`/`tesseract.js`
+    (OCR) остаются ignored у pnpm — для type-check/тестов не нужны, для реального
+    OCR-рантайма позже `pnpm approve-builds`.
+  - Состояние реальной папки на NTFS: **node_modules сейчас НЕТ** (повисшие симлинки
+    убраны). Ставить его туда бессмысленно до решения по варианту (a/b/c). `~/sb_check` —
+    рабочее ext4-зеркало для JS-проверок (можно удалить/пересоздать rsync'ом).
+  - **РЕШЕНО (владелец выбрал вариант «a»):** рабочая JS-копия репо живёт на **ext4 в
+    `~/school_book`** (полный rsync с NTFS: код+`.git`+ТЗ+`.claude`, без node_modules/
+    target/dist/данных сервера). Там `pnpm install` (isolated) встаёт за ~1с, все
+    проверки зелёные. Синк с NTFS — через git (`origin` = github.com/Gadzhik/school-book,
+    плюс локальный remote `ntfs` → путь на NTFS-разделе). Временный `~/sb_check` удалён.
+    **Рабочий процесс на Kubuntu:** JS/сборки/pnpm — в `~/school_book` (ext4); git,
+    Rust-сервер и реальные данные сервера — в NTFS-папке (там cargo работает). Коммитить
+    из одной копии и подтягивать в другую через `git pull`. NTFS-папку под JS НЕ
+    поднимать (pnpm install там виснет).
