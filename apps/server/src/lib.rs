@@ -10,6 +10,7 @@
 //!   CHITALKA_NAME    — имя сервера (для /status и OPDS)
 //!   CHITALKA_PORT    — порт (по умолчанию 9700, диапазон ТЗ 9700–9899)
 //!   CHITALKA_WEB     — папка веб-сборки (apps/web/dist) для раздачи UI
+//!   CHITALKA_UPDATES — папка обновлений приложения (manifest.json + APK/инсталляторы)
 //!   CHITALKA_ADMIN_LOGIN / CHITALKA_ADMIN_PASSWORD — встроенный админ при
 //!     пустой БД (по умолчанию admin/admin; пароль сменить после входа)
 
@@ -61,6 +62,8 @@ struct AppState {
     port: u16,
     /// Секрет подписи JWT (персистентный, из meta-таблицы).
     jwt_secret: String,
+    /// Папка с обновлениями приложения (manifest.json + APK/инсталляторы).
+    updates: PathBuf,
     /// Канал живой рассылки прогресса WS-клиентам (JSON DeviceProgress).
     progress_tx: broadcast::Sender<ProgressMsg>,
 }
@@ -89,6 +92,9 @@ pub struct Config {
     pub explicit_port: Option<u16>,
     /// Папка веб-сборки (apps/web/dist) для раздачи UI; `None` → только API.
     pub web_dir: Option<PathBuf>,
+    /// Папка обновлений приложения: `manifest.json` + файлы (APK, инсталляторы).
+    /// Клиенты видят вкладку «Доступно обновление» и скачивают отсюда.
+    pub updates: PathBuf,
     /// Логин встроенного администратора (создаётся при пустой БД).
     pub admin_login: String,
     /// Пароль встроенного администратора (по умолчанию — сменить после входа!).
@@ -119,6 +125,12 @@ impl Config {
                 .filter(|p| p.is_dir()),
             admin_login: env_or("CHITALKA_ADMIN_LOGIN", "admin"),
             admin_password: env_or("CHITALKA_ADMIN_PASSWORD", "admin"),
+            updates: std::env::var("CHITALKA_UPDATES")
+                .ok()
+                .map(PathBuf::from)
+                .unwrap_or_else(|| {
+                    PathBuf::from(env_or("CHITALKA_LIBRARY", "./library")).join("_updates")
+                }),
         }
     }
 }
@@ -196,6 +208,10 @@ fn build_router(state: Arc<AppState>, web_dir: Option<PathBuf>) -> Router {
         .route("/api/backup", get(backup))
         .route("/api/bookmarks", get(get_bookmarks).post(post_bookmarks))
         .route("/api/highlights", get(get_highlights).post(post_highlights))
+        // Обновления приложения: манифест и файлы публичны (скачивание APK/
+        // инсталлятора должно работать из обычного браузера без заголовков).
+        .route("/api/update", get(update_manifest))
+        .route("/updates/{file}", get(update_file))
         // WebSocket: токен передаётся в query (браузер не шлёт заголовки для WS).
         .route("/ws", get(ws_handler))
         // Обложка: токен в query — чтобы работало в <img src> (без заголовков).
@@ -290,6 +306,7 @@ pub async fn start(cfg: Config) -> std::io::Result<ServerHandle> {
         port,
         jwt_secret,
         progress_tx,
+        updates: cfg.updates.clone(),
     });
 
     match &cfg.web_dir {
@@ -1638,6 +1655,52 @@ async fn put_progress(
         }
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR,
     }
+}
+
+// --- Обновления приложения (вкладка «Доступно обновление») ---
+
+/// Манифест обновлений: содержимое `<updates>/manifest.json` как есть.
+/// Формат: {"version":"0.2.0","notes":"…","files":{"android":"app.apk",
+/// "windows":"setup.exe","linux":"app.AppImage"}}. 404 — обновлений нет.
+async fn update_manifest(State(st): State<Arc<AppState>>) -> Response {
+    match std::fs::read(st.updates.join("manifest.json")) {
+        Ok(bytes) => (
+            [(header::CONTENT_TYPE, "application/json; charset=utf-8")],
+            bytes,
+        )
+            .into_response(),
+        Err(_) => StatusCode::NOT_FOUND.into_response(),
+    }
+}
+
+/// Отдать файл обновления из папки updates (плоский список, без подпапок).
+async fn update_file(State(st): State<Arc<AppState>>, Path(file): Path<String>) -> Response {
+    // Только имя файла: защита от выхода из папки (../, вложенные пути).
+    if file.contains("..") || file.contains('/') || file.contains('\\') || file.is_empty() {
+        return StatusCode::BAD_REQUEST.into_response();
+    }
+    let path = st.updates.join(&file);
+    let bytes = match std::fs::read(&path) {
+        Ok(b) => b,
+        Err(_) => return StatusCode::NOT_FOUND.into_response(),
+    };
+    // APK — правильный тип, чтобы Android-браузер предложил установку.
+    let ctype = if file.to_lowercase().ends_with(".apk") {
+        "application/vnd.android.package-archive"
+    } else {
+        "application/octet-stream"
+    };
+    (
+        [
+            (header::CONTENT_TYPE, ctype.to_string()),
+            (
+                header::CONTENT_DISPOSITION,
+                format!("attachment; filename=\"{file}\""),
+            ),
+        ],
+        bytes,
+    )
+        .into_response()
 }
 
 /// WebSocket живой синхронизации прогресса. Токен — в query (?token=…):

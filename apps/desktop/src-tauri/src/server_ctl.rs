@@ -74,6 +74,9 @@ pub async fn start_server(
         // Встроенный админ при пустой БД (для входа сразу после установки).
         admin_login: "admin".to_string(),
         admin_password: "admin".to_string(),
+        // Обновления приложения (manifest.json + APK/инсталляторы) — рядом с
+        // библиотекой; админ кладёт файлы сюда, клиенты видят «Доступно обновление».
+        updates: base.join("library").join("_updates"),
     };
 
     let handle = start(cfg).await.map_err(|e| e.to_string())?;

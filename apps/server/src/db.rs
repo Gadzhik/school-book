@@ -986,9 +986,9 @@ mod tests {
     #[test]
     fn users_create_find_status() {
         let db = mem_db();
-        db.create_user(&mk_user("u1", "ivan", Role::Student, &["7"])).unwrap();
-        assert!(db.create_user(&mk_user("u2", "ivan", Role::Student, &[])).is_err()); // login UNIQUE
-        let got = db.user_by_login("ivan").unwrap().unwrap();
+        db.create_user(&mk_user("u1", "user7a", Role::Student, &["7"])).unwrap();
+        assert!(db.create_user(&mk_user("u2", "user7a", Role::Student, &[])).is_err()); // login UNIQUE
+        let got = db.user_by_login("user7a").unwrap().unwrap();
         assert_eq!(got.id, "u1");
         assert_eq!(got.classes, vec!["7".to_string()]);
         assert!(db.set_user_status("u1", UserStatus::Blocked).unwrap());

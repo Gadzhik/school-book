@@ -22,6 +22,7 @@ import type {
   AuditEntry,
   BookmarkSyncItem,
   HighlightSyncItem,
+  UpdateInfo,
 } from './types';
 
 export interface ClientOptions {
@@ -29,6 +30,21 @@ export interface ClientOptions {
   token?: string;
   /** Таймаут запросов, мс. */
   timeoutMs?: number;
+}
+
+/**
+ * Превратить низкоуровневую ошибку fetch в человекочитаемую (по-русски).
+ * «TypeError: Failed to fetch» браузера — это недоступный сервер (выключен,
+ * нет сети, не тот адрес); AbortError — таймаут. Остальное отдаём как есть.
+ */
+function humanizeNetError(e: unknown): Error {
+  if (e instanceof DOMException && e.name === 'AbortError') {
+    return new Error('Сервер не отвечает (истекло время ожидания)');
+  }
+  if (e instanceof TypeError) {
+    return new Error('Сервер недоступен. Проверьте, что он запущен, и подключение к сети.');
+  }
+  return e instanceof Error ? e : new Error(String(e));
 }
 
 export class LibraryServerClient {
@@ -60,12 +76,17 @@ export class LibraryServerClient {
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), this.#timeoutMs);
     try {
-      const res = await fetch(url, {
-        method: 'POST',
-        signal: ctrl.signal,
-        headers: this.#headers({ 'Content-Type': 'application/json' }),
-        body: JSON.stringify(body),
-      });
+      let res: Response;
+      try {
+        res = await fetch(url, {
+          method: 'POST',
+          signal: ctrl.signal,
+          headers: this.#headers({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify(body),
+        });
+      } catch (e) {
+        throw humanizeNetError(e);
+      }
       if (!res.ok) {
         const msg = (await res.text().catch(() => '')).trim();
         throw new Error(msg || `Сервер ответил ${res.status}`);
@@ -81,11 +102,16 @@ export class LibraryServerClient {
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), timeoutMs);
     try {
-      const res = await fetch(url, {
-        ...init,
-        signal: ctrl.signal,
-        headers: this.#headers(init.headers as Record<string, string>),
-      });
+      let res: Response;
+      try {
+        res = await fetch(url, {
+          ...init,
+          signal: ctrl.signal,
+          headers: this.#headers(init.headers as Record<string, string>),
+        });
+      } catch (e) {
+        throw humanizeNetError(e);
+      }
       if (!res.ok) throw new Error(`Сервер ответил ${res.status} на ${path}`);
       return res;
     } finally {
@@ -311,6 +337,25 @@ export class LibraryServerClient {
   async backup(): Promise<Blob> {
     const res = await this.#fetch('/api/backup');
     return res.blob();
+  }
+
+  /**
+   * Манифест обновлений приложения на сервере. null — обновлений нет
+   * (папка пуста/манифест не выложен) или сервер недоступен.
+   */
+  async getUpdateInfo(): Promise<UpdateInfo | null> {
+    try {
+      const res = await this.#fetch('/api/update');
+      const info = (await res.json()) as UpdateInfo;
+      return info && typeof info.version === 'string' ? info : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Абсолютная ссылка на файл обновления (для скачивания в браузере). */
+  updateFileUrl(file: string): string {
+    return `${this.baseUrl}/updates/${encodeURIComponent(file)}`;
   }
 
   /** Прогресс книги на сервере (последняя версия). */
