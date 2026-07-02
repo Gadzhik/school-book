@@ -305,6 +305,7 @@ export class ReaderController {
         fraction?: number;
         cfi?: string;
         tocItem?: { label?: string };
+        section?: { current?: number };
       };
       // foliate на коротких книгах отдаёт кривой fraction: NaN (0/0) на
       // титуле и >1 из-за оценочных размеров секций. NaN проходит через
@@ -316,6 +317,7 @@ export class ReaderController {
         fraction,
         cfi: d.cfi,
         tocLabel: d.tocItem?.label,
+        sectionIndex: d.section?.current,
       });
     });
 

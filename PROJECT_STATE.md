@@ -380,3 +380,12 @@
   `url.https://github.com/.insteadOf = git@github.com:` + `gh auth setup-git`
   (креденшелы через gh, аккаунт Gadzhik). Kubuntu продолжает пушить по SSH,
   Windows — по HTTPS, remote origin общий, не менять.
+- **2026-07-02 (Windows): номер страницы в шапке + «назад» на предыдущий экран.**
+  По скриншоту владельца: (1) для fixed-layout (PDF/CBZ) кнопка в шапке читалки
+  показывала процент — теперь «страница/всего» (`5/33`): в `Relocation` добавлен
+  `sectionIndex` (из `section.current` события relocate foliate; pdf.js и
+  comic-book.js задают splitTOCHref → sectionProgress есть), reflowable — процент
+  как раньше. (2) Стрелка «назад» из читалки вела жёстко в локальную библиотеку,
+  хотя книга могла быть открыта из сетевой (ServerScreen) — добавлен `goBack()`
+  в stores.ts: `history.back()` при depth>0 (popstate вернёт предыдущий экран),
+  иначе в библиотеку. svelte-check 0/0.
