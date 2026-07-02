@@ -3,7 +3,7 @@
  * предметы), старшему пользователю и администратору. Сервер проверяет права.
  */
 import { writable, get } from 'svelte/store';
-import type { Role } from '@reader/network';
+import { HttpError, type Role } from '@reader/network';
 import { getBookFile, updateBook, type BookMeta } from '@reader/core';
 import { authedClient, session } from './auth';
 import { openCatalog, refreshAvailable, refreshStatus } from './store';
@@ -60,10 +60,18 @@ export async function publishToServer(book: BookMeta): Promise<boolean> {
       categories: book.categories ?? [],
     };
     const sig = tagsSignature(book);
-    if (book.serverId) {
-      await c.updateBookTags(book.serverId, tags);
-      await updateBook(book.id, { serverSynced: sig });
-    } else {
+    let serverId = book.serverId;
+    if (serverId) {
+      try {
+        await c.updateBookTags(serverId, tags);
+        await updateBook(book.id, { serverSynced: sig });
+      } catch (e) {
+        // 404 — метка устарела (книгу удалили с сервера): публикуем заново.
+        if (!(e instanceof HttpError && e.status === 404)) throw e;
+        serverId = undefined;
+      }
+    }
+    if (!serverId) {
       const file = await getBookFile(book.id);
       const res = await c.uploadBook(file, { fileName: file.name, title: book.title, ...tags });
       await updateBook(book.id, { serverId: res.id, serverSynced: sig });
@@ -93,7 +101,13 @@ export async function unpublishFromServer(book: BookMeta): Promise<boolean> {
   uploadError.set('');
   uploadMsg.set('');
   try {
-    await c.deleteBook(book.serverId);
+    try {
+      await c.deleteBook(book.serverId);
+    } catch (e) {
+      // 404 — книги на сервере уже нет (удалена там/устаревшая метка).
+      // Локальную метку всё равно снимаем, иначе она зависает навсегда.
+      if (!(e instanceof HttpError && e.status === 404)) throw e;
+    }
     await updateBook(book.id, { serverId: undefined, serverSynced: undefined });
     await refreshLibrary();
     uploadMsg.set(`«${book.title}» снята с публикации.`);
