@@ -797,6 +797,16 @@ async fn update_book_tags(
     let mut classes = req.classes;
     let mut subjects = req.subjects;
     if me.role == Role::Teacher {
+        // Учитель правит только СВОИ загруженные книги — иначе мог бы скрыть/
+        // опубликовать/перетегировать чужие (admin/power — любые).
+        match st.db.book_owner(&id) {
+            Ok(Some(owner)) if owner.as_deref() == Some(me.id.as_str()) => {}
+            Ok(Some(_)) => {
+                return (StatusCode::FORBIDDEN, "Можно менять только свои книги").into_response()
+            }
+            Ok(None) => return StatusCode::NOT_FOUND.into_response(),
+            Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+        }
         classes.retain(|c| me.classes.contains(c));
         subjects.retain(|s| me.subjects.contains(s));
     }
