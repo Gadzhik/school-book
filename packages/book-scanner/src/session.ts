@@ -45,7 +45,7 @@ export class ScanSession {
     let src: Blob = file;
     if (opts.autoCrop) {
       try {
-        const cropped = await detectAndCrop(file, opts.maxSide);
+        const cropped = await detectAndCrop(file, opts.maxSide, opts.quality, opts.cropMargin);
         if (cropped) src = cropped;
       } catch {
         /* детекция упала — берём исходный кадр */

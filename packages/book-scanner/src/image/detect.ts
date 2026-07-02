@@ -69,7 +69,7 @@ function getWorker(): Worker | null {
 }
 
 /** Прогнать кадр через воркер (с таймаутом; при зависании воркер пересоздаётся). */
-function runDetect(image: ImageData): Promise<ImageData | null> {
+function runDetect(image: ImageData, cropMargin: number): Promise<ImageData | null> {
   const w = getWorker();
   if (!w) return Promise.resolve(null);
   const id = ++seq;
@@ -83,7 +83,10 @@ function runDetect(image: ImageData): Promise<ImageData | null> {
       resolve(null);
     }, JOB_TIMEOUT_MS);
     jobs.set(id, { resolve, reject, timer });
-    w.postMessage({ id, image, minFrac: MIN_FRAC, maxFrac: MAX_FRAC }, [image.data.buffer]);
+    w.postMessage(
+      { id, image, minFrac: MIN_FRAC, maxFrac: MAX_FRAC, cropMargin },
+      [image.data.buffer],
+    );
   });
 }
 
@@ -140,10 +143,11 @@ export async function detectAndCrop(
   blob: Blob,
   maxSide = 2000,
   quality = 0.85,
+  cropMargin = 0.04,
 ): Promise<Blob | null> {
   try {
     const image = await blobToImageData(blob, maxSide);
-    const warped = await runDetect(image);
+    const warped = await runDetect(image, cropMargin);
     if (!warped) return null;
     return await imageDataToBlob(warped, quality);
   } catch {

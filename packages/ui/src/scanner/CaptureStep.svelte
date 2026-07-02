@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { capturePages, importFiles, scannerBusy, autoCrop } from './store';
+  import { capturePages, importFiles, scannerBusy, autoCrop, cropMarginPct } from './store';
   import Icon from '../components/Icon.svelte';
 
   let input: HTMLInputElement;
@@ -42,6 +42,21 @@
     <input type="checkbox" bind:checked={$autoCrop} disabled={$scannerBusy} />
     <span>Авто-обрезка по краям листа</span>
   </label>
+  {#if $autoCrop}
+    <label class="opt margin">
+      <span>Запас по краям: {$cropMarginPct}%</span>
+      <input
+        type="range"
+        min="0"
+        max="15"
+        step="1"
+        bind:value={$cropMarginPct}
+        disabled={$scannerBusy}
+        aria-label="Запас по краям при обрезке, процентов"
+      />
+      <span class="opt-hint">0 — резать ровно по краям; больше — бережнее (меньше риск отрезать текст)</span>
+    </label>
+  {/if}
   {#if $scannerBusy}
     <p class="hint busy">Обработка фото… (первый раз — загрузка авто-обрезки, это пару секунд)</p>
   {:else}
@@ -105,6 +120,19 @@
   .opt input {
     width: 1.1rem;
     height: 1.1rem;
+  }
+  .opt.margin {
+    flex-wrap: wrap;
+    gap: 0.4rem 0.7rem;
+  }
+  .opt.margin input[type='range'] {
+    width: min(220px, 60%);
+    height: auto;
+  }
+  .opt-hint {
+    flex-basis: 100%;
+    color: var(--muted);
+    font-size: 0.8rem;
   }
   .hint {
     flex-basis: 100%;

@@ -28,6 +28,8 @@ export const assembleProgress = writable<{ done: number; total: number } | null>
 export const scannerError = writable<string | null>(null);
 /** Авто-обрезка листа + коррекция перспективы (Stage B, OpenCV лениво). */
 export const autoCrop = writable<boolean>(DEFAULT_PROCESS.autoCrop);
+/** Запас по краям при авто-обрезке, % (0 — резать ровно по краям). */
+export const cropMarginPct = writable<number>(Math.round(DEFAULT_PROCESS.cropMargin * 100));
 
 function sync() {
   pages.set(session ? [...session.pages] : []);
@@ -35,7 +37,11 @@ function sync() {
 
 /** Текущие параметры обработки страницы (с учётом тумблеров UI). */
 function processOpts(): ProcessOptions {
-  return { ...DEFAULT_PROCESS, autoCrop: get(autoCrop) };
+  return {
+    ...DEFAULT_PROCESS,
+    autoCrop: get(autoCrop),
+    cropMargin: Math.min(0.2, Math.max(0, get(cropMarginPct) / 100)),
+  };
 }
 
 /** Поддерживается ли сканер (нужен OPFS). */

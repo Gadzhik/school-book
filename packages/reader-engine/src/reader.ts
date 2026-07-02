@@ -22,6 +22,8 @@ interface FoliateBook {
   getCover?: () => Promise<Blob | null>;
   dir?: string;
   rendition?: { spread?: string; layout?: string; viewport?: unknown };
+  /** Секции книги (для fixed-layout секция = страница). */
+  sections?: unknown[];
 }
 
 interface FoliateView extends HTMLElement {
@@ -498,6 +500,16 @@ export class ReaderController {
   }
   goToFraction(frac: number): void {
     void this.#view?.goToFraction(frac);
+  }
+
+  /** Число секций книги (для fixed-layout — число страниц PDF/CBZ). */
+  get sectionCount(): number {
+    return this.#view?.book.sections?.length ?? 0;
+  }
+
+  /** Перейти к секции по индексу (fixed-layout: страница index, с 0). */
+  goToSection(index: number): void {
+    void (this.#view as unknown as { goTo(t: number): Promise<void> } | null)?.goTo(index);
   }
 
   // --- Выделения (highlights) ---

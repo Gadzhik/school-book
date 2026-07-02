@@ -62,6 +62,26 @@
   let showToc = $state(false);
   let showSettings = $state(false);
 
+  // Переход к странице/проценту (клик по «N%» в шапке).
+  let showJump = $state(false);
+  let jumpValue = $state('');
+  // Число страниц (секций) — для fixed-layout (PDF/CBZ) прыгаем по номеру.
+  let totalSections = $state(0);
+
+  function doJump() {
+    // bind:value у <input type=number> отдаёт number — приводим к строке.
+    const n = Number(String(jumpValue).replace(',', '.'));
+    if (!Number.isFinite(n) || !controller) return;
+    if ($readerIsFixedLayout && totalSections > 0) {
+      const page = Math.min(totalSections, Math.max(1, Math.round(n)));
+      controller.goToSection(page - 1);
+    } else {
+      controller.goToFraction(Math.min(100, Math.max(0, n)) / 100);
+    }
+    showJump = false;
+    jumpValue = '';
+  }
+
   // Закладки (ТЗ Часть 6, п.6.3)
   let bookmarks = $state<Bookmark[]>([]);
   let showBookmarks = $state(false);
@@ -276,6 +296,7 @@
       canSpeak = controller.canSpeak || nativeAvail;
       controller.setTypography(toTypography($settings));
       toc = controller.getToc();
+      totalSections = controller.sectionCount;
       // Живая синхронизация: другое устройство сдвинуло позицию — предложим перейти.
       progressSocket = subscribeProgress(meta, (p) => (remoteContinue = p));
       // Оценка читаемости по видимому тексту (только перетекаемые книги, не PDF).
@@ -429,7 +450,14 @@
         {readability.label}
       </span>
     {/if}
-    <span class="percent">{percent}%</span>
+    <button
+      class="percent"
+      onclick={() => (showJump = !showJump)}
+      title="Перейти к странице или проценту"
+      aria-label="Перейти к странице или проценту"
+    >
+      {percent}%
+    </button>
 
     {#if canSpeak}
       {#if ttsState === 'idle'}
@@ -513,6 +541,26 @@
     <button class="nav next" onclick={() => controller?.goRight()} aria-label="Вперёд">
       <Icon name="next" size={32} />
     </button>
+
+    {#if showJump}
+      <div class="jump-pop" role="dialog" aria-label="Переход по книге">
+        <label>
+          {$readerIsFixedLayout && totalSections > 0
+            ? `Страница (1–${totalSections})`
+            : 'Процент (0–100)'}
+          <!-- svelte-ignore a11y_autofocus -->
+          <input
+            type="number"
+            inputmode="numeric"
+            bind:value={jumpValue}
+            autofocus
+            onkeydown={(e) => e.key === 'Enter' && doJump()}
+          />
+        </label>
+        <button class="go" onclick={doJump}>Перейти</button>
+        <button class="cancel" onclick={() => (showJump = false)}>Отмена</button>
+      </div>
+    {/if}
 
     {#if loading}
       <div class="overlay">Загрузка книги…</div>
@@ -646,6 +694,63 @@
     font-size: 0.85rem;
     min-width: 3ch;
     text-align: right;
+    border: none;
+    background: transparent;
+    padding: 0.25rem 0.3rem;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  .percent:hover {
+    color: var(--text);
+    background: var(--bg);
+  }
+  .jump-pop {
+    position: absolute;
+    top: 0.6rem;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 20;
+    display: flex;
+    align-items: flex-end;
+    gap: 0.6rem;
+    padding: 0.7rem 0.9rem;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+  }
+  .jump-pop label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    color: var(--muted);
+    font-size: 0.82rem;
+  }
+  .jump-pop input {
+    width: 7rem;
+    padding: 0.4rem 0.5rem;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg);
+    color: var(--text);
+    font-size: 0.95rem;
+  }
+  .jump-pop .go {
+    padding: 0.45rem 0.9rem;
+    border: none;
+    border-radius: 8px;
+    background: var(--accent);
+    color: var(--on-accent);
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .jump-pop .cancel {
+    padding: 0.45rem 0.7rem;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
   }
   .readability {
     padding: 0.15rem 0.5rem;
