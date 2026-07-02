@@ -257,3 +257,33 @@
   Прогоны — скрипты в scratchpad (не в репо). Проверки: svelte-check 0/0,
   network tsc ок, vitest 19/19. Также удалён мусор `node_modules_OLD/`
   (корень и packages/core).
+- **2026-07-02 (Windows): UX-фиксы по замечаниям владельца + вкладка «Доступно
+  обновление» (все платформы).**
+  - «Failed to fetch»/ERR_CONNECTION_REFUSED при недоступном сервере → теперь
+    по-русски: «Сервер недоступен. Проверьте, что он запущен…» (humanizeNetError
+    в network/client.ts, покрывает загрузку книг, вход, каталог; AbortError →
+    «Сервер не отвечает»). Скрин владельца: публикация книги при выключенном
+    сервере.
+  - Русские имена убраны из примеров: плейсхолдеры «Иванов Иван Иванович»→
+    «Фамилия Имя Отчество», «ivan7a»→«например: u7a»; тестовый логин в db.rs
+    «ivan»→«user7a». ⚠️ ПРАВИЛО ВЛАДЕЛЬЦА: русские личные имена в примерах не
+    использовать никогда (есть память no-russian-names-in-examples).
+  - Фразы «Использовать код в мобильном приложении» в приложении НЕТ (проверен
+    весь репо) — есть только поле «Код доступа (если нужен)» = код пэйринга
+    CHITALKA_TOKEN (функционал существует).
+  - **Обновления приложения с сервера:** папка `CHITALKA_UPDATES` (дефолт
+    `<library>/_updates`) с `manifest.json` {version, notes, files{android,
+    windows,linux}} + файлы. Сервер: `GET /api/update` (манифест, 404 = нет),
+    `GET /updates/<file>` (публично, APK с правильным content-type, защита от
+    traversal — 400). Клиент: версия приложения = version из apps/web/package.json
+    (VITE_APP_VERSION через vite define; поднята до 0.1.0), store.checkUpdate()
+    при подключении/restoreSession, вкладка UpdatePanel в ServerScreen видна
+    только если версия на сервере новее: web → обновить SW + reload; Tauri
+    (android/windows/linux) → скачать файл через opener/window.open. Дока —
+    apps/server/README.md («Обновления приложения»). Выкладка обновления:
+    бампнуть версию в apps/web/package.json, собрать, положить файлы+манифест
+    в папку обновлений.
+  - Проверено в браузере (Playwright): вкладка «0.1.0 → 0.2.0» с заметками,
+    web-reload работает, /updates/*.apk 200, traversal 400, сообщение о
+    недоступном сервере по-русски. svelte-check 0/0, tsc ок, vitest 19/19,
+    cargo test 12/12.

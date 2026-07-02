@@ -160,7 +160,7 @@
 
     <label class="fld">
       Имя, фамилия, отчество
-      <input type="text" bind:value={fullName} placeholder="Иванов Иван Иванович" />
+      <input type="text" bind:value={fullName} placeholder="Фамилия Имя Отчество" />
     </label>
   {/if}
 
@@ -175,7 +175,7 @@
       autocapitalize="none"
       autocorrect="off"
       spellcheck="false"
-      placeholder="ivan7a"
+      placeholder="например: u7a"
     />
   </label>
   <label class="fld">

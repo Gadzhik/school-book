@@ -38,6 +38,7 @@
   import AssignmentsScreen from './AssignmentsScreen.svelte';
   import AdminPanel from './AdminPanel.svelte';
   import LocalServerPanel from './LocalServerPanel.svelte';
+  import UpdatePanel from './UpdatePanel.svelte';
   import PasswordChange from './PasswordChange.svelte';
   import QrCode from '../components/QrCode.svelte';
   import Icon from '../components/Icon.svelte';
@@ -348,6 +349,10 @@
         {/if}
         <button class="ghost" onclick={disconnect}>Отключиться</button>
       </div>
+
+      <!-- Вкладка «Доступно обновление»: видна, когда на сервере выложена
+           версия новее установленной (для web/desktop/android). -->
+      <UpdatePanel />
 
       {#if $session}
         <div class="user-bar">

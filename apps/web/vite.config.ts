@@ -25,7 +25,14 @@ const katexDir = norm(dirname(require.resolve('katex/package.json')));
 // Копируем в /opencv, грузим лениво script-тегом, кэшируем по запросу (не precache).
 const opencvDir = norm(dirname(require.resolve('@techstark/opencv-js/package.json')));
 
+// Версия приложения (из package.json web-оболочки) — прокидывается в бандл
+// для сравнения с манифестом обновлений сервера (вкладка «Доступно обновление»).
+const pkg = require('./package.json') as { version?: string };
+
 export default defineConfig({
+  define: {
+    'import.meta.env.VITE_APP_VERSION': JSON.stringify(pkg.version ?? '0.0.0'),
+  },
   plugins: [
     svelte(),
     // foliate-js отдаётся как статический ESM по адресу /foliate-js/*

@@ -135,6 +135,16 @@ export interface AssignmentInput {
   dueAt?: number;
 }
 
+/**
+ * Манифест обновлений приложения на сервере (`<updates>/manifest.json`).
+ * files: платформа → имя файла в папке обновлений (android/windows/linux).
+ */
+export interface UpdateInfo {
+  version: string;
+  notes?: string;
+  files?: Record<string, string>;
+}
+
 /** Запись журнала действий (аудит, ТЗ Часть 6, E8). */
 export interface AuditEntry {
   ts: number;

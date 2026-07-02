@@ -13,6 +13,7 @@ import {
   type ServerStatus,
   type OpdsFeed,
   type OpdsEntry,
+  type UpdateInfo,
 } from '@reader/network';
 import { importServerBook, books } from '../stores';
 
@@ -134,6 +135,7 @@ export async function connect(input: string, token?: string): Promise<boolean> {
     persist(conn);
     await openCatalog();
     void refreshAvailable();
+    void checkUpdate();
     return true;
   } catch (e) {
     connectError.set(
@@ -223,6 +225,46 @@ export async function refreshAvailable(): Promise<void> {
   }
 }
 
+// --- Обновления приложения (вкладка «Доступно обновление») ---
+
+/** Версия установленного приложения (из package.json web-сборки при билде). */
+export function appVersion(): string {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return ((import.meta as any).env?.VITE_APP_VERSION as string) || '0.0.0';
+  } catch {
+    return '0.0.0';
+  }
+}
+
+/** true, если версия a новее b (сравнение по числовым сегментам). */
+export function versionNewer(a: string, b: string): boolean {
+  const pa = a.split('.').map((x) => parseInt(x, 10) || 0);
+  const pb = b.split('.').map((x) => parseInt(x, 10) || 0);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const d = (pa[i] ?? 0) - (pb[i] ?? 0);
+    if (d !== 0) return d > 0;
+  }
+  return false;
+}
+
+/** Доступное обновление приложения с сервера (null — нет/не проверяли). */
+export const updateInfo = writable<UpdateInfo | null>(null);
+
+/**
+ * Проверить наличие обновления на сервере. Показываем только версии новее
+ * установленной. Тихо при офлайне — офлайн-первый клиент.
+ */
+export async function checkUpdate(): Promise<void> {
+  const c = client();
+  if (!c) {
+    updateInfo.set(null);
+    return;
+  }
+  const info = await c.getUpdateInfo();
+  updateInfo.set(info && versionNewer(info.version, appVersion()) ? info : null);
+}
+
 /**
  * Обновить статус сервера (имя/число видимых книг) без перезагрузки каталога.
  * Иначе счётчик «книг: N» замирал на значении момента подключения.
@@ -257,6 +299,7 @@ export async function restoreSession(): Promise<void> {
     serverStatus.set(status);
     await openCatalog();
     void refreshAvailable();
+    void checkUpdate();
   } catch {
     serverStatus.set(null);
     connectError.set('Сервер сейчас недоступен. Подключитесь снова.');
