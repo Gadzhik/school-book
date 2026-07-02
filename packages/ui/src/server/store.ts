@@ -223,6 +223,20 @@ export async function refreshAvailable(): Promise<void> {
   }
 }
 
+/**
+ * Обновить статус сервера (имя/число видимых книг) без перезагрузки каталога.
+ * Иначе счётчик «книг: N» замирал на значении момента подключения.
+ */
+export async function refreshStatus(): Promise<void> {
+  const c = client();
+  if (!c) return;
+  try {
+    serverStatus.set(await c.status());
+  } catch {
+    /* офлайн — оставляем прежний статус */
+  }
+}
+
 /** Поиск книг в каталоге по названию/автору. Пустой запрос → корневой каталог. */
 export async function searchCatalog(query: string): Promise<void> {
   const q = query.trim();

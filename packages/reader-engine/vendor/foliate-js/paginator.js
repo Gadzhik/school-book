@@ -283,7 +283,9 @@ class View {
         })
     }
     render(layout) {
-        if (!layout) return
+        // Патч: после закрытия книги iframe отвязан (contentDocument = null),
+        // а отложенные колбэки ResizeObserver ещё прилетают — не рендерим.
+        if (!layout || !this.document) return
         this.#column = layout.flow !== 'scrolled'
         this.#layout = layout
         if (this.#column) this.columnize(layout)
@@ -360,6 +362,8 @@ class View {
         }
     }
     expand() {
+        // Патч: см. render() — защита от колбэков после отвязки iframe.
+        if (!this.document) return
         const { documentElement } = this.document
         if (this.#column) {
             const side = this.#vertical ? 'height' : 'width'

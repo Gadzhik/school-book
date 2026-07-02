@@ -304,8 +304,14 @@ export class ReaderController {
         cfi?: string;
         tocItem?: { label?: string };
       };
+      // foliate на коротких книгах отдаёт кривой fraction: NaN (0/0) на
+      // титуле и >1 из-за оценочных размеров секций. NaN проходит через
+      // `?? 0`, в JSON превращается в null — сервер отвечал 422; >1 ломал
+      // проценты. Приводим к конечному числу в [0, 1].
+      const raw = d.fraction;
+      const fraction = Number.isFinite(raw) ? Math.min(Math.max(raw as number, 0), 1) : 0;
       this.#cb.onRelocate?.({
-        fraction: d.fraction ?? 0,
+        fraction,
         cfi: d.cfi,
         tocLabel: d.tocItem?.label,
       });
@@ -329,8 +335,10 @@ export class ReaderController {
       language: readContributor((md as Record<string, unknown>).language),
     };
     this.#cb.onMetadata(meta);
-    // Обложка загружается асинхронно.
-    this.#view.book.getCover?.().then((blob) => {
+    // Обложка загружается асинхронно. У FB2 без coverpage foliate возвращает
+    // null вместо промиса — без Promise.resolve падало `null.then` и книга
+    // вообще не открывалась.
+    void Promise.resolve(this.#view.book.getCover?.()).then((blob) => {
       if (blob && this.#cb.onMetadata) {
         const reader = new FileReader();
         reader.onload = () =>

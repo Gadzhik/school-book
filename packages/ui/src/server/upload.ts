@@ -6,7 +6,7 @@ import { writable, get } from 'svelte/store';
 import type { Role } from '@reader/network';
 import { getBookFile, updateBook, type BookMeta } from '@reader/core';
 import { authedClient, session } from './auth';
-import { openCatalog, refreshAvailable } from './store';
+import { openCatalog, refreshAvailable, refreshStatus } from './store';
 import { refreshLibrary } from '../stores';
 
 export const uploading = writable(false);
@@ -71,6 +71,7 @@ export async function publishToServer(book: BookMeta): Promise<boolean> {
     await refreshLibrary();
     uploadMsg.set(`«${book.title}» опубликована на сервере.`);
     void refreshAvailable();
+    void refreshStatus();
     return true;
   } catch (e) {
     uploadError.set(e instanceof Error ? e.message : 'Не удалось опубликовать книгу');
@@ -91,6 +92,7 @@ export async function uploadBook(file: File, meta: UploadMeta): Promise<boolean>
     await c.uploadBook(file, { fileName: file.name, ...meta });
     uploadMsg.set(`Книга «${meta.title || file.name}» добавлена.`);
     await openCatalog(); // обновить каталог
+    void refreshStatus(); // и счётчик «книг: N»
     return true;
   } catch (e) {
     uploadError.set(e instanceof Error ? e.message : 'Не удалось загрузить книгу');

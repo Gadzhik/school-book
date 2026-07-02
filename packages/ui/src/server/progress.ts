@@ -32,6 +32,8 @@ export async function pushProgress(
   force = false,
 ): Promise<void> {
   if (!book.serverId) return;
+  // NaN/Infinity сериализуются в null — сервер ответит 422. Не шлём мусор.
+  if (!Number.isFinite(fraction)) return;
   const client = currentClient();
   if (!client) return;
 
