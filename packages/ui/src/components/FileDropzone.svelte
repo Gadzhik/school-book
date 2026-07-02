@@ -1,8 +1,5 @@
 <script lang="ts">
-  import { get } from 'svelte/store';
   import { addFiles } from '../stores';
-  import { session, authedClient } from '../server/auth';
-  import { canUpload, publishToServer, uploadError } from '../server/upload';
   import Icon from './Icon.svelte';
 
   let dragging = $state(false);
@@ -13,27 +10,15 @@
     '.epub,.fb2,.fb2.zip,.fbz,.zip,.mobi,.azw3,.kf8,.pdf,.cbz,.cbr';
 
   /**
-   * Добавление книги. Всегда импортируем локально (получаем авторазметку тегов
-   * и локальную копию для чтения). Если пользователь вошёл на сервер и имеет
-   * права (учитель/старший/админ) — сразу публикуем книгу на сервер с её
-   * тегами, чтобы ученики класса её увидели. Позже теги можно поправить и
-   * нажать «На сервер» на карточке (теги доедут без повторной загрузки).
+   * Добавление книги — только в локальную библиотеку (импорт + авторазметка).
+   * На сервер книга НЕ уходит автоматически: публикация — явным нажатием
+   * «Опубликовать на сервере» на карточке книги (решение владельца 2026-07-02;
+   * раньше учительская книга улетала на сервер сразу при добавлении).
    */
   async function handleFiles(files: FileList) {
     status = '';
-    const role = get(session)?.user.role;
     const added = await addFiles(files);
-    if (authedClient() && canUpload(role) && added.length) {
-      status = 'Публикация на сервере…';
-      let ok = 0;
-      for (const b of added) if (await publishToServer(b)) ok++;
-      status =
-        ok === added.length
-          ? `Добавлено и опубликовано на сервере: ${ok}`
-          : `Опубликовано ${ok} из ${added.length}. ${get(uploadError) || ''}`.trim();
-    } else if (added.length) {
-      status = `Добавлено: ${added.length}`;
-    }
+    if (added.length) status = `Добавлено: ${added.length}`;
   }
 
   async function onDrop(e: DragEvent) {

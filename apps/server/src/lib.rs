@@ -203,6 +203,7 @@ fn build_router(state: Arc<AppState>, web_dir: Option<PathBuf>) -> Router {
             post(upload_book).layer(DefaultBodyLimit::max(512 * 1024 * 1024)),
         )
         .route("/books/{id}/tags", post(update_book_tags))
+        .route("/books/{id}", delete(delete_book))
         .route("/api/assignments", get(list_assignments).post(create_assignment))
         .route("/api/assignments/{id}", delete(delete_assignment))
         .route("/api/assignments/{id}/progress", post(assignment_progress))
@@ -839,6 +840,44 @@ async fn update_book_tags(
     ) {
         Ok(true) => {
             st.db.log_audit(&me.full_name, "retag", &id);
+            StatusCode::NO_CONTENT.into_response()
+        }
+        Ok(false) => StatusCode::NOT_FOUND.into_response(),
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
+}
+
+/// Снять книгу с публикации (удалить с сервера). Учитель — только свои
+/// загруженные; admin/power — любые. Файл удаляется вместе с записью
+/// (иначе периодический рескан папки library вернул бы книгу в каталог).
+async fn delete_book(
+    State(st): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> Response {
+    let Some(me) = current_user(&st, &headers) else {
+        return StatusCode::UNAUTHORIZED.into_response();
+    };
+    if me.status != UserStatus::Active || me.role == Role::Student {
+        return (StatusCode::FORBIDDEN, "Нет прав на удаление книг").into_response();
+    }
+    let (path, owner) = match st.db.book_path_owner(&id) {
+        Ok(Some(v)) => v,
+        Ok(None) => return StatusCode::NOT_FOUND.into_response(),
+        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    };
+    if me.role == Role::Teacher && owner.as_deref() != Some(me.id.as_str()) {
+        return (StatusCode::FORBIDDEN, "Можно снимать с публикации только свои книги")
+            .into_response();
+    }
+    match st.db.delete_book(&id) {
+        Ok(true) => {
+            if let Err(e) = std::fs::remove_file(&path) {
+                // Запись уже удалена; файл мог быть удалён вручную — не критично,
+                // но если файл остался в library, рескан вернёт книгу в каталог.
+                tracing::warn!("не удалось удалить файл книги {path}: {e}");
+            }
+            st.db.log_audit(&me.full_name, "unpublish", &id);
             StatusCode::NO_CONTENT.into_response()
         }
         Ok(false) => StatusCode::NOT_FOUND.into_response(),

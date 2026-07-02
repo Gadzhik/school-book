@@ -81,6 +81,33 @@ export async function publishToServer(book: BookMeta): Promise<boolean> {
   }
 }
 
+/**
+ * Снять книгу с публикации: удалить с сервера (файл + запись каталога) и
+ * забыть serverId локально. Книга остаётся в локальной библиотеке.
+ * Права (учитель — только свои) проверяет сервер. true — успех.
+ */
+export async function unpublishFromServer(book: BookMeta): Promise<boolean> {
+  const c = authedClient();
+  if (!c || !book.serverId || !canUpload(get(session)?.user.role)) return false;
+  uploading.set(true);
+  uploadError.set('');
+  uploadMsg.set('');
+  try {
+    await c.deleteBook(book.serverId);
+    await updateBook(book.id, { serverId: undefined, serverSynced: undefined });
+    await refreshLibrary();
+    uploadMsg.set(`«${book.title}» снята с публикации.`);
+    void refreshAvailable();
+    void refreshStatus();
+    return true;
+  } catch (e) {
+    uploadError.set(e instanceof Error ? e.message : 'Не удалось снять с публикации');
+    return false;
+  } finally {
+    uploading.set(false);
+  }
+}
+
 /** Загрузить файл книги на сервер. true — успех. */
 export async function uploadBook(file: File, meta: UploadMeta): Promise<boolean> {
   const c = authedClient();

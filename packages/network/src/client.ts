@@ -302,6 +302,14 @@ export class LibraryServerClient {
     });
   }
 
+  /**
+   * Снять книгу с публикации (удалить с сервера). Учитель — только свои
+   * загруженные; admin/power — любые. Права проверяет сервер.
+   */
+  async deleteBook(id: string): Promise<void> {
+    await this.#fetch(`/books/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  }
+
   // --- Задания (ТЗ Часть 6, п.6.5) ---
 
   /** Задания: ученику — свои с личным статусом; учителю/админу — по правам. */
