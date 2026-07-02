@@ -68,6 +68,7 @@ function detectAndWarp(
   image: ImageData,
   minFrac: number,
   maxFrac: number,
+  cropMargin: number,
 ): ImageData | null {
   const src = cv.matFromImageData(image);
   const gray = new cv.Mat();
@@ -137,11 +138,30 @@ function detectAndWarp(
     const frac = quadArea / (image.width * image.height);
     if (frac < minFrac || frac > maxFrac) return null;
 
+    // Запас по краям: расширяем четырёхугольник наружу от его центроида на
+    // долю cropMargin (0 — ровно по найденным краям). Контур часто проходит
+    // ЧУТЬ внутри листа — без запаса обрезка «съедает» текст у краёв.
+    if (cropMargin > 0) {
+      const cx = (tl.x + tr.x + bl.x + br.x) / 4;
+      const cy = (tl.y + tr.y + bl.y + br.y) / 4;
+      const k = 1 + Math.min(0.2, Math.max(0, cropMargin));
+      const expand = (p: Pt): Pt => ({
+        x: Math.min(image.width - 1, Math.max(0, cx + (p.x - cx) * k)),
+        y: Math.min(image.height - 1, Math.max(0, cy + (p.y - cy) * k)),
+      });
+      tl = expand(tl);
+      tr = expand(tr);
+      bl = expand(bl);
+      br = expand(br);
+    }
+    const finW = Math.round(Math.max(dist(tl, tr), dist(bl, br)));
+    const finH = Math.round(Math.max(dist(tl, bl), dist(tr, br)));
+
     const srcTri = cv.matFromArray(4, 1, cv.CV_32FC2, [
       tl.x, tl.y, tr.x, tr.y, bl.x, bl.y, br.x, br.y,
     ]);
     const dstTri = cv.matFromArray(4, 1, cv.CV_32FC2, [
-      0, 0, outW, 0, 0, outH, outW, outH,
+      0, 0, finW, 0, 0, finH, finW, finH,
     ]);
     const M = cv.getPerspectiveTransform(srcTri, dstTri);
     warped = new cv.Mat();
@@ -149,7 +169,7 @@ function detectAndWarp(
       src,
       warped,
       M,
-      new cv.Size(outW, outH),
+      new cv.Size(finW, finH),
       cv.INTER_LINEAR,
       cv.BORDER_CONSTANT,
       new cv.Scalar(),
@@ -173,15 +193,16 @@ function detectAndWarp(
 }
 
 self.onmessage = async (ev: MessageEvent) => {
-  const { id, image, minFrac, maxFrac } = ev.data as {
+  const { id, image, minFrac, maxFrac, cropMargin } = ev.data as {
     id: number;
     image: ImageData;
     minFrac: number;
     maxFrac: number;
+    cropMargin: number;
   };
   try {
     const { mod: cv } = await loadCv();
-    const out = detectAndWarp(cv, image, minFrac, maxFrac);
+    const out = detectAndWarp(cv, image, minFrac, maxFrac, cropMargin ?? 0);
     if (out) {
       (self as any).postMessage({ id, ok: true, image: out }, [out.data.buffer]);
     } else {

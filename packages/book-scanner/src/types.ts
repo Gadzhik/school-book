@@ -43,6 +43,12 @@ export interface ProcessOptions {
   enhance: boolean;
   /** Авто-обрезка листа + коррекция перспективы (OpenCV, лениво). */
   autoCrop: boolean;
+  /**
+   * Запас по краям при авто-обрезке: доля размера листа (0..0.2), на которую
+   * найденный четырёхугольник расширяется наружу. 0 — резать ровно по краям
+   * (агрессивно), 0.04 — небольшой запас (по умолчанию), больше — бережнее.
+   */
+  cropMargin: number;
 }
 
 export const DEFAULT_PROCESS: ProcessOptions = {
@@ -50,4 +56,5 @@ export const DEFAULT_PROCESS: ProcessOptions = {
   quality: 0.82,
   enhance: true,
   autoCrop: true,
+  cropMargin: 0.04,
 };

@@ -43,6 +43,32 @@ export class FixedLayout extends HTMLElement {
     #center
     #side
     #zoom
+    // Патч: свайп-навигация. В отличие от paginator (reflowable), у
+    // fixed-layout не было тач-обработки вовсе — PDF/CBZ на телефоне нельзя
+    // было листать свайпом. Горизонтальный жест ≥50px → prev/next.
+    #touch = null
+    #onTouchStart(e) {
+        const t = e.changedTouches[0]
+        this.#touch = t ? { x: t.screenX, y: t.screenY } : null
+    }
+    #onTouchEnd(e) {
+        const start = this.#touch
+        this.#touch = null
+        if (!start) return
+        // Пинч-зум или зумленная страница — не листаем.
+        if (globalThis.visualViewport && globalThis.visualViewport.scale > 1) return
+        const t = e.changedTouches[0]
+        if (!t) return
+        const dx = t.screenX - start.x
+        const dy = t.screenY - start.y
+        if (Math.abs(dx) < 50 || Math.abs(dx) < Math.abs(dy) * 1.5) return
+        if (dx > 0) this.prev()
+        else this.next()
+    }
+    #attachTouch(target) {
+        target.addEventListener('touchstart', this.#onTouchStart.bind(this), { passive: true })
+        target.addEventListener('touchend', this.#onTouchEnd.bind(this), { passive: true })
+    }
     constructor() {
         super()
 
@@ -58,6 +84,13 @@ export class FixedLayout extends HTMLElement {
         }`)
 
         this.#observer.observe(this)
+
+        // Патч: свайп на самом элементе и в каждом загруженном документе
+        // (тачи в основном приходят внутрь iframe со страницей).
+        this.#attachTouch(this)
+        this.addEventListener('load', ({ detail: { doc } }) => {
+            if (doc) this.#attachTouch(doc)
+        })
     }
     attributeChangedCallback(name, _, value) {
         switch (name) {
