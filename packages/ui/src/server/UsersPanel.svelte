@@ -104,7 +104,16 @@
   {#if showCreate}
     <div class="create">
       <input type="text" bind:value={fullName} placeholder="Имя и фамилия" />
-      <input type="text" bind:value={login} placeholder="Логин" autocomplete="off" />
+      <!-- Логин регистрозависимый — глушим автокапитализацию мобильной клавиатуры. -->
+      <input
+        type="text"
+        bind:value={login}
+        placeholder="Логин"
+        autocomplete="off"
+        autocapitalize="none"
+        autocorrect="off"
+        spellcheck="false"
+      />
       <input type="password" bind:value={password} placeholder="Пароль (мин. 4)" autocomplete="new-password" />
       <select bind:value={role}>
         {#each roles as r (r)}
