@@ -361,3 +361,14 @@
   слайдер, «Страница (1–3)» → стр.3 = 100%, «Процент» 50 на FB2. Свайп на
   реальном тач-устройстве не гонялся (жесты в Playwright не эмулировал) —
   проверить на эмуляторе после следующего билда APK.
+- **2026-07-02 (Windows): авточистка билд-кэшей.** Папка проекта разрослась до
+  ~51 GB: `apps/mobile/src-tauri/target` 36 GB, `gen/android/app/build` 5,3 GB,
+  `apps/desktop/src-tauri/target` 5,4 GB, `apps/server/target` 3,9 GB — всё
+  билд-артефакты (cargo сам target не чистит). Разово удалены (осталось
+  1,17 GB). Дальше — автоматика: установлен `cargo-sweep`, добавлен
+  `scripts/clean-build-cache.ps1` (cargo sweep --time 30 по всему репо +
+  удаление Gradle-кэша `gen/android/app/build`, если не менялся 30+ дней; лог —
+  `scripts/clean-build-cache.log`, гитигнорить). Windows Task Scheduler:
+  задача `SchoolBook-CleanBuildCache`, еженедельно вс 12:00. Скрипт и задача —
+  Windows-only; на Kubuntu при желании аналог: `cargo sweep --time 30 -r
+  ~/school_book` в cron.
