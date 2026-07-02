@@ -36,7 +36,7 @@
   } from '@reader/reader-engine';
   import { readabilityScore, recordActivity, type Readability } from '@reader/core';
   import { nativeTtsAvailable, nativeSpeak, nativeStop } from '@reader/adapters';
-  import { view, settings, readerIsFixedLayout } from '../stores';
+  import { view, goBack, settings, readerIsFixedLayout } from '../stores';
   import { toTypography } from '../theme';
   import SettingsPanel from './SettingsPanel.svelte';
   import WordPopover from './WordPopover.svelte';
@@ -58,6 +58,9 @@
 
   let title = $state('');
   let percent = $state(0);
+  // Текущая страница (секция + 1) — для fixed-layout (PDF/CBZ) в шапке
+  // показываем «страница/всего» вместо процента.
+  let currentPage = $state(0);
   let toc = $state<TocEntry[]>([]);
   let showToc = $state(false);
   let showSettings = $state(false);
@@ -243,6 +246,7 @@
 
   function onRelocate(loc: Relocation) {
     percent = Math.round(loc.fraction * 100);
+    if (loc.sectionIndex !== undefined) currentPage = loc.sectionIndex + 1;
     lastFraction = loc.fraction;
     lastLocator = loc.cfi;
     currentLocator = loc.cfi;
@@ -435,7 +439,7 @@
 
 <div class="reader">
   <header class="bar">
-    <button class="icon-btn" onclick={() => view.set({ name: 'library' })} aria-label="К библиотеке">
+    <button class="icon-btn" onclick={goBack} aria-label="Назад">
       <Icon name="back" />
     </button>
     <span class="title" title={title}>{title}</span>
@@ -456,7 +460,11 @@
       title="Перейти к странице или проценту"
       aria-label="Перейти к странице или проценту"
     >
-      {percent}%
+      {#if $readerIsFixedLayout && currentPage > 0 && totalSections > 0}
+        {currentPage}/{totalSections}
+      {:else}
+        {percent}%
+      {/if}
     </button>
 
     {#if canSpeak}

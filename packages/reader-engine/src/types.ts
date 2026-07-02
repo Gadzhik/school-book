@@ -8,6 +8,8 @@ export interface Relocation {
   cfi?: string;
   /** Текущий пункт оглавления, если определён. */
   tocLabel?: string;
+  /** Индекс текущей секции (fixed-layout: страница, с 0). */
+  sectionIndex?: number;
 }
 
 /** Пункт оглавления (плоский список с уровнем вложенности). */

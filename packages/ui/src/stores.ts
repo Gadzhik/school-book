@@ -119,6 +119,17 @@ export function initHistoryNavigation(): void {
   });
 }
 
+/**
+ * Назад на предыдущий экран (кнопка «Назад» в шапках). Через History API,
+ * чтобы возвращаться туда, откуда пришли (например, книга открыта из сетевой
+ * библиотеки → назад в неё, а не в локальную). Без нашей истории — в библиотеку.
+ */
+export function goBack(): void {
+  const cur = history.state as HistEntry | null;
+  if (cur && cur.depth > 0) history.back();
+  else view.set({ name: 'library' });
+}
+
 /** Список книг библиотеки. */
 export const books = writable<BookMeta[]>([]);
 
