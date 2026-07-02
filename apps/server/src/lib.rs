@@ -112,17 +112,20 @@ impl Config {
             explicit_port: std::env::var("CHITALKA_PORT")
                 .ok()
                 .and_then(|s| s.trim().parse::<u16>().ok()),
-            // Веб-UI: явный CHITALKA_WEB, иначе папка `web` рядом с exe (для
-            // standalone-раздачи — http://<сервер>/ открывает читалку/админку).
+            // Веб-UI: явный CHITALKA_WEB; иначе папка `web` рядом с exe
+            // (standalone-раздача); иначе ../web/dist — запуск из apps/server
+            // в монорепо (dev) без env тоже отдаёт читалку, а не 404.
             web_dir: std::env::var("CHITALKA_WEB")
                 .ok()
                 .map(PathBuf::from)
+                .filter(|p| p.is_dir())
                 .or_else(|| {
                     std::env::current_exe()
                         .ok()
                         .and_then(|p| p.parent().map(|d| d.join("web")))
+                        .filter(|p| p.is_dir())
                 })
-                .filter(|p| p.is_dir()),
+                .or_else(|| Some(PathBuf::from("../web/dist")).filter(|p| p.is_dir())),
             admin_login: env_or("CHITALKA_ADMIN_LOGIN", "admin"),
             admin_password: env_or("CHITALKA_ADMIN_PASSWORD", "admin"),
             updates: std::env::var("CHITALKA_UPDATES")
