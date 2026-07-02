@@ -15,7 +15,8 @@ import {
   type OpdsEntry,
   type UpdateInfo,
 } from '@reader/network';
-import { importServerBook, books } from '../stores';
+import { updateBook } from '@reader/core';
+import { importServerBook, books, refreshLibrary } from '../stores';
 
 /** Сохранённое подключение (адрес + токен пэйринга). */
 interface SavedConnection {
@@ -213,6 +214,7 @@ export async function refreshAvailable(): Promise<void> {
   }
   try {
     const { feed } = await c.catalog('/opds/all');
+    await reconcilePublished(feed);
     const downloaded = new Set(
       get(books).filter((b) => b.serverId).map((b) => b.serverId as string),
     );
@@ -223,6 +225,28 @@ export async function refreshAvailable(): Promise<void> {
   } catch {
     /* офлайн — счётчик не трогаем */
   }
+}
+
+/**
+ * Сверить локальные метки «на сервере» с реальным каталогом. Книги могли
+ * удалить с сервера (или метки остались с эпохи автопубликации при импорте,
+ * до 2026-07-02) — тогда serverId/serverSynced зависают навсегда и карточки
+ * врут «✓ На сервере». Чистим метку у книг, опубликованных этим аккаунтом
+ * (serverSynced задан: владелец всегда видит свои книги в каталоге), только
+ * под JWT — анонимный каталог показывает лишь «доступные всем», по нему судить
+ * о существовании книги нельзя.
+ */
+async function reconcilePublished(feed: OpdsFeed): Promise<void> {
+  if (!get(authToken)) return;
+  const onServer = new Set(feed.entries.map((e) => serverIdOf(e)));
+  const stale = get(books).filter(
+    (b) => b.serverId && b.serverSynced && !onServer.has(b.serverId),
+  );
+  if (!stale.length) return;
+  for (const b of stale) {
+    await updateBook(b.id, { serverId: undefined, serverSynced: undefined });
+  }
+  await refreshLibrary();
 }
 
 // --- Обновления приложения (вкладка «Доступно обновление») ---

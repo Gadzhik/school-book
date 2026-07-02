@@ -33,6 +33,19 @@ export interface ClientOptions {
 }
 
 /**
+ * Ошибка HTTP-ответа сервера: сообщение + код статуса. Код нужен вызывающим,
+ * чтобы отличать «книги уже нет» (404) от прочих сбоев.
+ */
+export class HttpError extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
+/**
  * Превратить низкоуровневую ошибку fetch в человекочитаемую (по-русски).
  * «TypeError: Failed to fetch» браузера — это недоступный сервер (выключен,
  * нет сети, не тот адрес); AbortError — таймаут. Остальное отдаём как есть.
@@ -89,7 +102,7 @@ export class LibraryServerClient {
       }
       if (!res.ok) {
         const msg = (await res.text().catch(() => '')).trim();
-        throw new Error(msg || `Сервер ответил ${res.status}`);
+        throw new HttpError(res.status, msg || `Сервер ответил ${res.status}`);
       }
       return (await res.json()) as T;
     } finally {
@@ -112,7 +125,7 @@ export class LibraryServerClient {
       } catch (e) {
         throw humanizeNetError(e);
       }
-      if (!res.ok) throw new Error(`Сервер ответил ${res.status} на ${path}`);
+      if (!res.ok) throw new HttpError(res.status, `Сервер ответил ${res.status} на ${path}`);
       return res;
     } finally {
       clearTimeout(t);

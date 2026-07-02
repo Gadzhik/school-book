@@ -9,4 +9,4 @@ export * from './opds';
 export * from './sync';
 export * from './discovery';
 export * from './ws';
-export { LibraryServerClient, type ClientOptions } from './client';
+export { LibraryServerClient, HttpError, type ClientOptions } from './client';
