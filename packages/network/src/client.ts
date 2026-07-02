@@ -122,7 +122,17 @@ export class LibraryServerClient {
   /** Статус сервера (для пинга и отображения имени). */
   async status(): Promise<ServerStatus> {
     const res = await this.#fetch('/status');
-    const data = (await res.json()) as Partial<ServerStatus>;
+    // По чужому адресу (например, dev-сервер Vite) на /status может прийти
+    // HTML — без проверки это давало «Unexpected token '<' … is not valid JSON».
+    let data: Partial<ServerStatus>;
+    try {
+      data = (await res.json()) as Partial<ServerStatus>;
+    } catch {
+      throw new Error('По этому адресу нет сервера читалки. Проверьте адрес.');
+    }
+    if (!data || typeof data !== 'object' || !('books' in data) || !('name' in data)) {
+      throw new Error('По этому адресу нет сервера читалки. Проверьте адрес.');
+    }
     return { ok: true, ...data };
   }
 

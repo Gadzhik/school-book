@@ -16,8 +16,18 @@
   // Поля сервера показываем, пока не подключены; submit входа/регистрации сам
   // сначала подключается к серверу, потом авторизуется — один экран, один шаг.
   let address = $state('');
-  let token = $state('');
   const connected = $derived(!!$serverStatus);
+
+  // Кнопка-подстановка адреса для Android-эмулятора — только в dev-сборке
+  // (pnpm web:dev); в продакшене пользователей она только путает.
+  const devMode: boolean = (() => {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return (import.meta as any).env?.DEV === true;
+    } catch {
+      return false;
+    }
+  })();
 
   // Поиск серверов в LAN — только в нативной оболочке (Tauri). __TAURI__
   // читаем лениво (может появиться позже импорта модуля).
@@ -52,7 +62,9 @@
       connectError.set('Введите адрес сервера школы.');
       return false;
     }
-    return await connect(address, token);
+    // Код доступа (пэйринг-токен) вводом не запрашиваем: серверы со входом по
+    // аккаунтам он не нужен, а при QR-пэйринге токен приходит внутри QR.
+    return await connect(address);
   }
 
   // Общие поля
@@ -111,24 +123,17 @@
         bind:value={address}
         placeholder="Адрес сервера школы, напр. 192.168.1.10:9700"
       />
-      <!-- Код регистрозависимый — автокапитализация мобильной клавиатуры ломает ввод. -->
-      <input
-        type="text"
-        bind:value={token}
-        autocapitalize="none"
-        autocorrect="off"
-        spellcheck="false"
-        placeholder="Код доступа (если нужен)"
-      />
       <div class="srv-actions">
         {#if hasTauri}
           <button type="button" class="ghost" onclick={discover} disabled={discovering}>
             {discovering ? 'Поиск…' : 'Найти сервер в сети'}
           </button>
         {/if}
-        <button type="button" class="ghost" onclick={() => (address = '10.0.2.2:9700')}>
-          Android-эмулятор
-        </button>
+        {#if devMode}
+          <button type="button" class="ghost" onclick={() => (address = '10.0.2.2:9700')}>
+            Android-эмулятор
+          </button>
+        {/if}
       </div>
       {#if discovered.length}
         <ul class="discovered">

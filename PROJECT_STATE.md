@@ -287,3 +287,15 @@
     web-reload работает, /updates/*.apk 200, traversal 400, сообщение о
     недоступном сервере по-русски. svelte-check 0/0, tsc ок, vitest 19/19,
     cargo test 12/12.
+- **2026-07-02 (Windows): чистка экрана входа + фикс «not valid JSON».**
+  По скрину владельца (открыл `pnpm web:dev` = только UI без сервера, ввёл
+  неверный адрес): «Unexpected token '<' … is not valid JSON» — по адресу
+  отвечал не сервер читалки, а HTML (vite). Теперь `client.status()` проверяет,
+  что ответ JSON и похож на /status → «По этому адресу нет сервера читалки.
+  Проверьте адрес.» Также: поле «Код доступа» УБРАНО с форм подключения
+  (AuthScreen + ServerScreen) — при входе по аккаунтам оно не нужно, пэйринг-
+  токен по-прежнему работает через QR (`chitalka://pair?…&token=`); кнопка
+  «Android-эмулятор» видна ТОЛЬКО в dev-сборке (`import.meta.env.DEV`) — в
+  APK/прода её больше нет (skill emulator-test обновлён: адрес 10.0.2.2:9700
+  вводить вручную). Напоминание: `pnpm web:dev` НЕ поднимает сервер — сервер
+  это `cargo run` в apps/server (skill run-server).

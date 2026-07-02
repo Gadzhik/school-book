@@ -135,7 +135,16 @@
   }
 
   let address = $state('');
-  let token = $state('');
+
+  // Кнопка-подстановка адреса для Android-эмулятора — только в dev-сборке.
+  const devMode: boolean = (() => {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return (import.meta as any).env?.DEV === true;
+    } catch {
+      return false;
+    }
+  })();
 
   // Нативная оболочка (Tauri) умеет mDNS-поиск серверов; в вебе кнопки нет.
   // __TAURI__ инжектится оболочкой и может появиться позже импорта модуля —
@@ -199,7 +208,8 @@
 
   async function submit() {
     if (!address.trim()) return;
-    await connect(address, token);
+    // Пэйринг-токен вручную не вводится: при QR-пэйринге он внутри QR.
+    await connect(address);
   }
 
   /** Записи каталога: навигация (подкаталог) или книга (скачивание). */
@@ -275,7 +285,6 @@
           placeholder="192.168.1.10:9700 или http://…"
           onkeydown={(e) => e.key === 'Enter' && submit()}
         />
-        <input type="text" bind:value={token} placeholder="Токен (если задан)" />
         <button class="primary" onclick={submit} disabled={$connecting}>
           {$connecting ? 'Подключение…' : 'Подключиться'}
         </button>
@@ -287,13 +296,15 @@
             {discovering ? 'Поиск…' : 'Найти серверы (LAN)'}
           </button>
         {/if}
-        <button
-          class="ghost"
-          title="Адрес хоста для приложения в Android-эмуляторе"
-          onclick={() => (address = '10.0.2.2:9700')}
-        >
-          Android-эмулятор
-        </button>
+        {#if devMode}
+          <button
+            class="ghost"
+            title="Адрес хоста для приложения в Android-эмуляторе"
+            onclick={() => (address = '10.0.2.2:9700')}
+          >
+            Android-эмулятор
+          </button>
+        {/if}
       </div>
 
       {#if discovered.length}
