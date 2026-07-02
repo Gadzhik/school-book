@@ -372,3 +372,11 @@
   задача `SchoolBook-CleanBuildCache`, еженедельно вс 12:00. Скрипт и задача —
   Windows-only; на Kubuntu при желании аналог: `cargo sweep --time 30 -r
   ~/school_book` в cron.
+- **2026-07-02 (Windows): git push с Windows — HTTPS вместо SSH.** В `.git/config`
+  (общий для обеих ОС, репо на NTFS) прописан `core.sshCommand` с Kubuntu-путём
+  `-i /home/igadzhi/.ssh/id_ed25519` → push с Windows падал
+  (`Permission denied (publickey)`; SSH-ключей на Windows нет). Решение: в
+  ГЛОБАЛЬНОМ конфиге Windows (`~/.gitconfig`, на Kubuntu не влияет) —
+  `url.https://github.com/.insteadOf = git@github.com:` + `gh auth setup-git`
+  (креденшелы через gh, аккаунт Gadzhik). Kubuntu продолжает пушить по SSH,
+  Windows — по HTTPS, remote origin общий, не менять.
