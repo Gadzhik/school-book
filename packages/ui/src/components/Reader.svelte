@@ -390,7 +390,9 @@
   /** Создать выделение из текущего выделения текста. */
   async function highlightSelection() {
     if (!controller || !selection) return;
-    const cfi = controller.getSelectionCfi();
+    // CFI, снятый в момент выделения; живое выделение — только как фолбэк
+    // (клик по кнопке мог уже снять его в iframe).
+    const cfi = selection.cfi ?? controller.getSelectionCfi();
     if (!cfi) {
       selection = null;
       return;

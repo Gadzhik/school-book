@@ -270,10 +270,10 @@ export class ReaderController {
 
     // Тап по слову → словарь. Привязываем к каждому загруженному документу.
     view.addEventListener('load', (e: Event) => {
-      const doc = (e as CustomEvent).detail?.doc as Document | undefined;
-      if (doc) {
-        this.#attachWordTap(doc);
-        void this.#renderMath(doc);
+      const detail = (e as CustomEvent).detail as { doc?: Document; index?: number } | undefined;
+      if (detail?.doc) {
+        this.#attachWordTap(detail.doc, detail.index);
+        void this.#renderMath(detail.doc);
       }
     });
 
@@ -396,7 +396,7 @@ export class ReaderController {
   }
 
   /** Привязать обработчики тапа по слову и движения курсора (однократно). */
-  #attachWordTap(doc: Document): void {
+  #attachWordTap(doc: Document, sectionIndex?: number): void {
     if (this.#tappedDocs.has(doc)) return;
     this.#tappedDocs.add(doc);
 
@@ -416,7 +416,17 @@ export class ReaderController {
         const sel = doc.getSelection?.();
         const text = sel?.toString().trim() ?? '';
         if (text.length >= 2 && sel && sel.rangeCount > 0) {
-          this.#cb.onSelection?.({ text, rect: absRect(sel.getRangeAt(0), doc) });
+          // CFI считаем сразу: клик по кнопке попапа (в родительском документе)
+          // может снять выделение в iframe до обработчика кнопки.
+          let cfi: string | undefined;
+          if (sectionIndex !== undefined) {
+            try {
+              cfi = this.#view?.getCFI(sectionIndex, sel.getRangeAt(0));
+            } catch {
+              /* нет CFI — кнопка «Выделить» попробует взять его при клике */
+            }
+          }
+          this.#cb.onSelection?.({ text, rect: absRect(sel.getRangeAt(0), doc), cfi });
         } else {
           this.#cb.onSelection?.(null);
         }
