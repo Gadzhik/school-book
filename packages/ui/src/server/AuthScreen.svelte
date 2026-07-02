@@ -111,7 +111,15 @@
         bind:value={address}
         placeholder="Адрес сервера школы, напр. 192.168.1.10:9700"
       />
-      <input type="text" bind:value={token} placeholder="Код доступа (если нужен)" />
+      <!-- Код регистрозависимый — автокапитализация мобильной клавиатуры ломает ввод. -->
+      <input
+        type="text"
+        bind:value={token}
+        autocapitalize="none"
+        autocorrect="off"
+        spellcheck="false"
+        placeholder="Код доступа (если нужен)"
+      />
       <div class="srv-actions">
         {#if hasTauri}
           <button type="button" class="ghost" onclick={discover} disabled={discovering}>
@@ -158,7 +166,17 @@
 
   <label class="fld">
     Логин
-    <input type="text" bind:value={userLogin} autocomplete="username" placeholder="ivan7a" />
+    <!-- Логин чувствителен к регистру; мобильная клавиатура капитализирует
+         первую букву («S7» вместо «s7») и вход не проходит — глушим. -->
+    <input
+      type="text"
+      bind:value={userLogin}
+      autocomplete="username"
+      autocapitalize="none"
+      autocorrect="off"
+      spellcheck="false"
+      placeholder="ivan7a"
+    />
   </label>
   <label class="fld">
     Пароль
