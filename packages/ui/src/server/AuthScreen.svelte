@@ -7,7 +7,15 @@
   import { onMount } from 'svelte';
   import { listSubjects, listClasses, type SubjectEntry, type ClassEntry } from '@reader/core';
   import { register, login, authBusy, authError } from './auth';
-  import { serverStatus, connecting, connectError, connect, disconnect } from './store';
+  import {
+    serverStatus,
+    connecting,
+    connectError,
+    connect,
+    disconnect,
+    connection,
+    restoreSession,
+  } from './store';
 
   let mode = $state<'login' | 'register'>('login');
   let role = $state<'student' | 'teacher'>('student');
@@ -238,7 +246,16 @@
     </fieldset>
   {/if}
 
-  {#if $connectError}<p class="error">{$connectError}</p>{/if}
+  {#if $connectError}
+    <p class="error">{$connectError}</p>
+    {#if $connection && !connected}
+      <!-- Сервер был недоступен в момент открытия страницы (например,
+           перезапускался) — повторная попытка без повторного ввода адреса. -->
+      <button type="button" class="ghost retry" onclick={restoreSession} disabled={$connecting}>
+        {$connecting ? 'Подключение…' : 'Повторить подключение'}
+      </button>
+    {/if}
+  {/if}
   {#if $authError}<p class="error">{$authError}</p>{/if}
 
   <button class="primary" onclick={submit} disabled={$authBusy || $connecting}>
@@ -443,6 +460,9 @@
   }
   .error {
     color: #c0392b;
+  }
+  .retry {
+    margin: 0.3rem 0 0.5rem;
   }
   .note {
     margin: 0.8rem 0 0;
