@@ -3,7 +3,13 @@
   import { formatLabel, type BookMeta } from '@reader/core';
   import { view, removeBook } from '../stores';
   import { session, authedClient } from '../server/auth';
-  import { canUpload, publishToServer, tagsSignature, uploadError } from '../server/upload';
+  import {
+    canUpload,
+    publishToServer,
+    unpublishFromServer,
+    tagsSignature,
+    uploadError,
+  } from '../server/upload';
   import Icon from './Icon.svelte';
 
   interface Props {
@@ -33,6 +39,18 @@
     publishMsg = ok ? '✓ на сервере' : get(uploadError) || 'ошибка';
     publishing = false;
     if (ok) setTimeout(() => (publishMsg = ''), 2500);
+  }
+
+  async function onUnpublish(e: MouseEvent) {
+    e.stopPropagation();
+    if (publishing) return;
+    if (!confirm(`Снять «${book.title}» с публикации? Книга исчезнет с сервера, локальная копия останется.`)) return;
+    publishing = true;
+    publishMsg = '';
+    const ok = await unpublishFromServer(book);
+    publishMsg = ok ? 'снята с публикации' : get(uploadError) || 'ошибка';
+    publishing = false;
+    setTimeout(() => (publishMsg = ''), 2500);
   }
 
   function open() {
@@ -81,12 +99,28 @@
         class:synced
         onclick={onPublish}
         disabled={publishing}
-        title={synced ? 'Уже на сервере (нажмите, чтобы перезалить)' : 'Опубликовать на сервере с текущими тегами'}
+        title={synced
+          ? 'Уже на сервере (нажмите, чтобы перезалить)'
+          : 'Опубликовать на сервере с текущими тегами'}
       >
         {publishing
-          ? 'Публикация…'
-          : publishMsg || (synced ? '✓ На сервере' : book.serverId ? 'Обновить на сервере' : 'На сервер')}
+          ? 'Подождите…'
+          : publishMsg ||
+            (synced
+              ? '✓ На сервере'
+              : book.serverId
+                ? 'Обновить на сервере'
+                : 'Опубликовать на сервере')}
       </button>
+      {#if book.serverId && !publishing && !publishMsg}
+        <button
+          class="unpublish"
+          onclick={onUnpublish}
+          title="Убрать книгу с сервера (локальная копия останется)"
+        >
+          Снять с публикации
+        </button>
+      {/if}
     {/if}
   </div>
   <div class="actions">
@@ -185,6 +219,21 @@
   .publish.synced {
     border-color: #2e9e5b;
     color: #2e9e5b;
+  }
+  .unpublish {
+    margin-top: 0.3rem;
+    width: 100%;
+    padding: 0.3rem 0.5rem;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: transparent;
+    color: var(--muted);
+    font-size: 0.75rem;
+    cursor: pointer;
+  }
+  .unpublish:hover {
+    border-color: #c0392b;
+    color: #c0392b;
   }
   .progress {
     margin-top: 0.5rem;

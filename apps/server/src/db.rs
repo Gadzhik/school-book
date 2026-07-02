@@ -352,6 +352,28 @@ impl Db {
         }
     }
 
+    /// Путь к файлу и владелец книги (для снятия с публикации).
+    pub fn book_path_owner(&self, id: &str) -> rusqlite::Result<Option<(String, Option<String>)>> {
+        let conn = self.conn.lock().unwrap();
+        let r = conn.query_row(
+            "SELECT file_path, owner_id FROM books WHERE id=?1",
+            params![id],
+            |r| Ok((r.get::<_, String>(0)?, r.get::<_, Option<String>>(1)?)),
+        );
+        match r {
+            Ok(v) => Ok(Some(v)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+
+    /// Удалить книгу из каталога (снятие с публикации). true — была и удалена.
+    pub fn delete_book(&self, id: &str) -> rusqlite::Result<bool> {
+        let conn = self.conn.lock().unwrap();
+        let n = conn.execute("DELETE FROM books WHERE id=?1", params![id])?;
+        Ok(n > 0)
+    }
+
     pub fn update_book_tags(
         &self,
         id: &str,
