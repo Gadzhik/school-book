@@ -12,7 +12,9 @@ import {
   type DeviceProgress,
   type ProgressSocket,
 } from '@reader/network';
+import { get } from 'svelte/store';
 import { currentClient, currentServer } from './store';
+import { session } from './auth';
 
 /** Анти-спам: не чаще одной отправки прогресса на книгу за интервал. */
 const PUSH_THROTTLE_MS = 4000;
@@ -99,10 +101,14 @@ export function subscribeProgress(
   if (!conn) return null;
 
   const myDevice = getDeviceId();
+  const myUser = get(session)?.user.id ?? '';
   return openProgressSocket(conn.server, {
     token: conn.token,
     onProgress: (p) => {
       if (p.bookId !== book.serverId || p.deviceId === myDevice) return;
+      // Новый сервер фильтрует по аккаунту сам; страховка для старого
+      // сервера, который рассылает всем: чужой аккаунт игнорируем.
+      if ((p.userId ?? '') !== myUser) return;
       onRemote({ fraction: p.progress, locator: p.locator });
     },
   });

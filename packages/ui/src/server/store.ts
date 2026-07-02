@@ -94,7 +94,10 @@ const client = currentClient;
 export function currentServer(): { server: ServerInfo; token?: string } | null {
   const conn = get(connection);
   if (!conn) return null;
-  return { server: { baseUrl: conn.baseUrl, name: conn.name }, token: conn.token };
+  // JWT важнее токена пэйринга: сервер скоупит живой прогресс по аккаунту
+  // (сокет с кодом пэйринга видит только legacy-записи без аккаунта).
+  const token = get(authToken) ?? conn.token;
+  return { server: { baseUrl: conn.baseUrl, name: conn.name }, token };
 }
 
 /**

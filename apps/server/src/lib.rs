@@ -62,7 +62,16 @@ struct AppState {
     /// Секрет подписи JWT (персистентный, из meta-таблицы).
     jwt_secret: String,
     /// Канал живой рассылки прогресса WS-клиентам (JSON DeviceProgress).
-    progress_tx: broadcast::Sender<String>,
+    progress_tx: broadcast::Sender<ProgressMsg>,
+}
+
+/// Сообщение живой рассылки прогресса: скоуп аккаунта + готовый JSON.
+/// scope=None — legacy-клиенты без аккаунта; сокет получает только сообщения
+/// своего скоупа (чужой прогресс не утекает другим пользователям).
+#[derive(Clone)]
+struct ProgressMsg {
+    scope: Option<String>,
+    json: String,
 }
 
 /// Конфигурация запуска сервера. Десктоп задаёт поля напрямую, бинарь —
@@ -270,7 +279,7 @@ pub async fn start(cfg: Config) -> std::io::Result<ServerHandle> {
     let port = listener.local_addr().map(|a| a.port()).unwrap_or(0);
     let address = mdns::local_ipv4().to_string(); // LAN-IP (0.0.0.0 слушает все)
 
-    let (progress_tx, _) = broadcast::channel::<String>(64);
+    let (progress_tx, _) = broadcast::channel::<ProgressMsg>(64);
     let jwt_secret = db.jwt_secret();
     let state = Arc::new(AppState {
         db,
@@ -407,7 +416,9 @@ fn env_or(key: &str, default: &str) -> String {
     std::env::var(key).unwrap_or_else(|_| default.to_string())
 }
 
-/// Проверка Bearer-токена пэйринга (если CHITALKA_TOKEN задан).
+/// Проверка Bearer-токена пэйринга (если CHITALKA_TOKEN задан). Валидный JWT
+/// активного пользователя тоже проходит — иначе вошедший клиент (шлёт JWT
+/// вместо кода пэйринга) получал бы 401 на каталоге/синке при заданном токене.
 async fn auth(
     State(st): State<Arc<AppState>>,
     req: Request,
@@ -420,7 +431,10 @@ async fn auth(
             .get(header::AUTHORIZATION)
             .and_then(|h| h.to_str().ok())
             .map(|h| h == expected)
-            .unwrap_or(false);
+            .unwrap_or(false)
+            || current_user(&st, req.headers())
+                .map(|u| u.status == UserStatus::Active)
+                .unwrap_or(false);
         if !ok {
             return Err(StatusCode::UNAUTHORIZED);
         }
@@ -1572,8 +1586,21 @@ async fn cover(
     }
 }
 
-async fn get_progress(State(st): State<Arc<AppState>>, Path(book_id): Path<String>) -> Response {
-    match st.db.latest_progress(&book_id) {
+/// Скоуп синка прогресса/слов (Часть 6): id вошедшего активного пользователя,
+/// иначе '' — legacy-скоуп клиентов без аккаунта (старое поведение per-device).
+fn sync_scope(st: &AppState, headers: &HeaderMap) -> String {
+    current_user(st, headers)
+        .filter(|u| u.status == UserStatus::Active)
+        .map(|u| u.id)
+        .unwrap_or_default()
+}
+
+async fn get_progress(
+    State(st): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Path(book_id): Path<String>,
+) -> Response {
+    match st.db.latest_progress(&sync_scope(&st, &headers), &book_id) {
         Ok(Some(p)) => Json(p).into_response(),
         Ok(None) => StatusCode::NOT_FOUND.into_response(),
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
@@ -1582,14 +1609,20 @@ async fn get_progress(State(st): State<Arc<AppState>>, Path(book_id): Path<Strin
 
 async fn put_progress(
     State(st): State<Arc<AppState>>,
+    headers: HeaderMap,
     Path(_book_id): Path<String>,
-    Json(p): Json<DeviceProgress>,
+    Json(mut p): Json<DeviceProgress>,
 ) -> StatusCode {
-    match st.db.upsert_progress(&p) {
+    // Владельца определяет сервер по JWT — значение из тела игнорируем
+    // (клиент не может писать прогресс в чужой аккаунт).
+    let scope = sync_scope(&st, &headers);
+    p.user_id = if scope.is_empty() { None } else { Some(scope.clone()) };
+    match st.db.upsert_progress(&scope, &p) {
         Ok(()) => {
-            // Живая рассылка другим устройствам («продолжить везде», ТЗ 4.9.4).
+            // Живая рассылка другим устройствам («продолжить везде», ТЗ 4.9.4) —
+            // только сокетам того же аккаунта (или legacy-сокетам для scope='').
             if let Ok(json) = serde_json::to_string(&p) {
-                let _ = st.progress_tx.send(json);
+                let _ = st.progress_tx.send(ProgressMsg { scope: p.user_id.clone(), json });
             }
             StatusCode::NO_CONTENT
         }
@@ -1597,28 +1630,52 @@ async fn put_progress(
     }
 }
 
-/// WebSocket живой синхронизации прогресса. Токен — в query (?token=…).
+/// WebSocket живой синхронизации прогресса. Токен — в query (?token=…):
+/// код пэйринга (legacy-скоуп) или JWT (скоуп аккаунта — сокет получает
+/// только прогресс своего пользователя).
 async fn ws_handler(
     ws: WebSocketUpgrade,
     State(st): State<Arc<AppState>>,
     Query(q): Query<WsQuery>,
 ) -> Response {
-    if let Some(tok) = &st.token {
-        if q.token.as_deref() != Some(tok.as_str()) {
-            return StatusCode::UNAUTHORIZED.into_response();
+    // JWT → скоуп аккаунта.
+    let jwt_user = q
+        .token
+        .as_deref()
+        .and_then(|t| auth::verify_token(&st.jwt_secret, t))
+        .and_then(|c| st.db.user_by_id(&c.sub).ok().flatten())
+        .filter(|u| u.status == UserStatus::Active);
+    let scope: Option<String> = match jwt_user {
+        Some(u) => Some(u.id),
+        None => {
+            // Не JWT: если задан код пэйринга — он обязан совпасть.
+            if let Some(tok) = &st.token {
+                if q.token.as_deref() != Some(tok.as_str()) {
+                    return StatusCode::UNAUTHORIZED.into_response();
+                }
+            }
+            None // legacy-скоуп (клиенты без аккаунта)
         }
-    }
+    };
     let rx = st.progress_tx.subscribe();
-    ws.on_upgrade(move |socket| ws_loop(socket, rx))
+    ws.on_upgrade(move |socket| ws_loop(socket, rx, scope))
 }
 
-/// Пересылаем рассылку прогресса в сокет, читаем входящие до закрытия.
-async fn ws_loop(mut socket: WebSocket, mut rx: broadcast::Receiver<String>) {
+/// Пересылаем рассылку прогресса в сокет (только сообщения своего скоупа),
+/// читаем входящие до закрытия.
+async fn ws_loop(
+    mut socket: WebSocket,
+    mut rx: broadcast::Receiver<ProgressMsg>,
+    scope: Option<String>,
+) {
     loop {
         tokio::select! {
             msg = rx.recv() => match msg {
-                Ok(json) => {
-                    if socket.send(Message::Text(json.into())).await.is_err() {
+                Ok(m) => {
+                    if m.scope != scope {
+                        continue; // чужой аккаунт — не пересылаем
+                    }
+                    if socket.send(Message::Text(m.json.into())).await.is_err() {
                         break;
                     }
                 }
@@ -1646,8 +1703,12 @@ struct WsQuery {
     token: Option<String>,
 }
 
-async fn get_words(State(st): State<Arc<AppState>>, Query(q): Query<SinceQuery>) -> Response {
-    match st.db.words_since(q.since) {
+async fn get_words(
+    State(st): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Query(q): Query<SinceQuery>,
+) -> Response {
+    match st.db.words_since(&sync_scope(&st, &headers), q.since) {
         Ok(items) => Json(items).into_response(),
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
@@ -1655,9 +1716,10 @@ async fn get_words(State(st): State<Arc<AppState>>, Query(q): Query<SinceQuery>)
 
 async fn post_words(
     State(st): State<Arc<AppState>>,
+    headers: HeaderMap,
     Json(items): Json<Vec<WordSyncItem>>,
 ) -> StatusCode {
-    match st.db.upsert_words(&items) {
+    match st.db.upsert_words(&sync_scope(&st, &headers), &items) {
         Ok(()) => StatusCode::NO_CONTENT,
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR,
     }

@@ -21,6 +21,10 @@ pub struct DeviceProgress {
     pub book_id: String,
     #[serde(rename = "deviceId")]
     pub device_id: String,
+    /// Аккаунт-владелец (Часть 6): ставится СЕРВЕРОМ по JWT, значение от
+    /// клиента игнорируется. None — legacy-скоуп (клиент без аккаунта).
+    #[serde(rename = "userId", default, skip_serializing_if = "Option::is_none")]
+    pub user_id: Option<String>,
     pub progress: f64,
     #[serde(default)]
     pub locator: Option<String>,
