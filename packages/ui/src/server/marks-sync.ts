@@ -11,11 +11,18 @@ import {
   type BookmarkSyncDelta,
   type HighlightSyncDelta,
 } from '@reader/core';
+import { get } from 'svelte/store';
 import type { BookmarkSyncItem, HighlightSyncItem } from '@reader/network';
-import { authedClient } from './auth';
+import { authedClient, session } from './auth';
 
-const BM_KEY = 'reader:bookmarksSync';
-const HL_KEY = 'reader:highlightsSync';
+// Метки последнего синка — per-account: при смене пользователя на устройстве
+// метка своя, иначе новый аккаунт пропустил бы серверные записи старше чужой метки.
+function bmKey(): string {
+  return `reader:bookmarksSync:${get(session)?.user.id ?? 'anon'}`;
+}
+function hlKey(): string {
+  return `reader:highlightsSync:${get(session)?.user.id ?? 'anon'}`;
+}
 
 function readTs(key: string): number {
   try {
@@ -47,20 +54,20 @@ export async function syncMarks(): Promise<MarksSyncResult> {
   const startedAt = Date.now();
   try {
     // Закладки.
-    const bmSince = readTs(BM_KEY);
+    const bmSince = readTs(bmKey());
     const bmLocal = await bookmarksChangedSince(bmSince);
     if (bmLocal.length) await client.pushBookmarks(bmLocal as BookmarkSyncItem[]);
     const bmRemote = await client.pullBookmarks(bmSince);
     await applyBookmarkSync(bmRemote as BookmarkSyncDelta[]);
-    writeTs(BM_KEY, startedAt);
+    writeTs(bmKey(), startedAt);
 
     // Выделения.
-    const hlSince = readTs(HL_KEY);
+    const hlSince = readTs(hlKey());
     const hlLocal = await highlightsChangedSince(hlSince);
     if (hlLocal.length) await client.pushHighlights(hlLocal as HighlightSyncItem[]);
     const hlRemote = await client.pullHighlights(hlSince);
     await applyHighlightSync(hlRemote as HighlightSyncDelta[]);
-    writeTs(HL_KEY, startedAt);
+    writeTs(hlKey(), startedAt);
 
     return {
       ok: true,

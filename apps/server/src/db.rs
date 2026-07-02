@@ -78,19 +78,22 @@ impl Db {
                  owner_id TEXT
              );
              CREATE TABLE IF NOT EXISTS progress (
+                 user_id TEXT NOT NULL DEFAULT '',
                  book_id TEXT NOT NULL,
                  device_id TEXT NOT NULL,
                  progress REAL NOT NULL,
                  locator TEXT,
                  updated_at INTEGER NOT NULL,
-                 PRIMARY KEY (book_id, device_id)
+                 PRIMARY KEY (user_id, book_id, device_id)
              );
              CREATE TABLE IF NOT EXISTS words (
-                 normalized TEXT PRIMARY KEY,
+                 user_id TEXT NOT NULL DEFAULT '',
+                 normalized TEXT NOT NULL,
                  word TEXT NOT NULL,
                  definition TEXT,
                  updated_at INTEGER NOT NULL,
-                 deleted INTEGER NOT NULL DEFAULT 0
+                 deleted INTEGER NOT NULL DEFAULT 0,
+                 PRIMARY KEY (user_id, normalized)
              );
              CREATE TABLE IF NOT EXISTS users (
                  id TEXT PRIMARY KEY,
@@ -189,6 +192,52 @@ impl Db {
             conn.execute("UPDATE books SET public=1", [])?;
         }
         let _ = conn.execute("ALTER TABLE books ADD COLUMN owner_id TEXT", []);
+        // Миграция синка на аккаунты (Часть 6): в progress/words добавился
+        // user_id (вошёл в PRIMARY KEY). SQLite не меняет PK через ALTER —
+        // перестраиваем таблицу. Старые строки получают user_id='' —
+        // legacy-скоуп клиентов без аккаунта (их поведение не меняется).
+        let has_col = |table: &str, col: &str| -> bool {
+            conn.query_row(
+                &format!("SELECT 1 FROM pragma_table_info('{table}') WHERE name='{col}'"),
+                [],
+                |_| Ok(true),
+            )
+            .unwrap_or(false)
+        };
+        if !has_col("progress", "user_id") {
+            conn.execute_batch(
+                "ALTER TABLE progress RENAME TO progress_old;
+                 CREATE TABLE progress (
+                     user_id TEXT NOT NULL DEFAULT '',
+                     book_id TEXT NOT NULL,
+                     device_id TEXT NOT NULL,
+                     progress REAL NOT NULL,
+                     locator TEXT,
+                     updated_at INTEGER NOT NULL,
+                     PRIMARY KEY (user_id, book_id, device_id)
+                 );
+                 INSERT INTO progress (user_id,book_id,device_id,progress,locator,updated_at)
+                     SELECT '',book_id,device_id,progress,locator,updated_at FROM progress_old;
+                 DROP TABLE progress_old;",
+            )?;
+        }
+        if !has_col("words", "user_id") {
+            conn.execute_batch(
+                "ALTER TABLE words RENAME TO words_old;
+                 CREATE TABLE words (
+                     user_id TEXT NOT NULL DEFAULT '',
+                     normalized TEXT NOT NULL,
+                     word TEXT NOT NULL,
+                     definition TEXT,
+                     updated_at INTEGER NOT NULL,
+                     deleted INTEGER NOT NULL DEFAULT 0,
+                     PRIMARY KEY (user_id, normalized)
+                 );
+                 INSERT INTO words (user_id,normalized,word,definition,updated_at,deleted)
+                     SELECT '',normalized,word,definition,updated_at,deleted FROM words_old;
+                 DROP TABLE words_old;",
+            )?;
+        }
         Ok(Db { conn: Mutex::new(conn) })
     }
 
@@ -345,20 +394,28 @@ impl Db {
         conn.query_row("SELECT COUNT(*) FROM books", [], |r| r.get(0)).unwrap_or(0)
     }
 
-    /// Самый свежий прогресс книги по всем устройствам («продолжить везде»).
-    pub fn latest_progress(&self, book_id: &str) -> rusqlite::Result<Option<DeviceProgress>> {
+    /// Самый свежий прогресс книги по всем устройствам АККАУНТА
+    /// («продолжить везде», Часть 6). user_id='' — legacy-скоуп без аккаунта.
+    pub fn latest_progress(
+        &self,
+        user_id: &str,
+        book_id: &str,
+    ) -> rusqlite::Result<Option<DeviceProgress>> {
         let conn = self.conn.lock().unwrap();
         let r = conn.query_row(
-            "SELECT book_id,device_id,progress,locator,updated_at
-             FROM progress WHERE book_id=?1 ORDER BY updated_at DESC LIMIT 1",
-            params![book_id],
+            "SELECT user_id,book_id,device_id,progress,locator,updated_at
+             FROM progress WHERE user_id=?1 AND book_id=?2
+             ORDER BY updated_at DESC LIMIT 1",
+            params![user_id, book_id],
             |r| {
+                let uid: String = r.get(0)?;
                 Ok(DeviceProgress {
-                    book_id: r.get(0)?,
-                    device_id: r.get(1)?,
-                    progress: r.get(2)?,
-                    locator: r.get(3)?,
-                    updated_at: r.get(4)?,
+                    user_id: if uid.is_empty() { None } else { Some(uid) },
+                    book_id: r.get(1)?,
+                    device_id: r.get(2)?,
+                    progress: r.get(3)?,
+                    locator: r.get(4)?,
+                    updated_at: r.get(5)?,
                 })
             },
         );
@@ -369,30 +426,30 @@ impl Db {
         }
     }
 
-    /// Записать прогресс (LWW: обновляем только если updated_at не старее).
-    pub fn upsert_progress(&self, p: &DeviceProgress) -> rusqlite::Result<()> {
+    /// Записать прогресс аккаунта (LWW: обновляем только если updated_at не старее).
+    pub fn upsert_progress(&self, user_id: &str, p: &DeviceProgress) -> rusqlite::Result<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
-            "INSERT INTO progress (book_id,device_id,progress,locator,updated_at)
-             VALUES (?1,?2,?3,?4,?5)
-             ON CONFLICT(book_id,device_id) DO UPDATE SET
+            "INSERT INTO progress (user_id,book_id,device_id,progress,locator,updated_at)
+             VALUES (?1,?2,?3,?4,?5,?6)
+             ON CONFLICT(user_id,book_id,device_id) DO UPDATE SET
                  progress=excluded.progress,
                  locator=excluded.locator,
                  updated_at=excluded.updated_at
              WHERE excluded.updated_at >= progress.updated_at",
-            params![p.book_id, p.device_id, p.progress, p.locator, p.updated_at],
+            params![user_id, p.book_id, p.device_id, p.progress, p.locator, p.updated_at],
         )?;
         Ok(())
     }
 
-    /// Слова, изменённые после метки since (для дельта-синхронизации).
-    pub fn words_since(&self, since: i64) -> rusqlite::Result<Vec<WordSyncItem>> {
+    /// Слова аккаунта, изменённые после метки since (дельта-синхронизация).
+    pub fn words_since(&self, user_id: &str, since: i64) -> rusqlite::Result<Vec<WordSyncItem>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
             "SELECT normalized,word,definition,updated_at,deleted
-             FROM words WHERE updated_at > ?1 ORDER BY updated_at",
+             FROM words WHERE user_id=?1 AND updated_at > ?2 ORDER BY updated_at",
         )?;
-        let rows = stmt.query_map(params![since], |r| {
+        let rows = stmt.query_map(params![user_id, since], |r| {
             Ok(WordSyncItem {
                 normalized: r.get(0)?,
                 word: r.get(1)?,
@@ -404,21 +461,21 @@ impl Db {
         rows.collect()
     }
 
-    /// Принять пачку слов (LWW per normalized).
-    pub fn upsert_words(&self, items: &[WordSyncItem]) -> rusqlite::Result<()> {
+    /// Принять пачку слов аккаунта (LWW per normalized).
+    pub fn upsert_words(&self, user_id: &str, items: &[WordSyncItem]) -> rusqlite::Result<()> {
         let mut conn = self.conn.lock().unwrap();
         let tx = conn.transaction()?;
         for w in items {
             tx.execute(
-                "INSERT INTO words (normalized,word,definition,updated_at,deleted)
-                 VALUES (?1,?2,?3,?4,?5)
-                 ON CONFLICT(normalized) DO UPDATE SET
+                "INSERT INTO words (user_id,normalized,word,definition,updated_at,deleted)
+                 VALUES (?1,?2,?3,?4,?5,?6)
+                 ON CONFLICT(user_id,normalized) DO UPDATE SET
                      word=excluded.word,
                      definition=excluded.definition,
                      updated_at=excluded.updated_at,
                      deleted=excluded.deleted
                  WHERE excluded.updated_at >= words.updated_at",
-                params![w.normalized, w.word, w.definition, w.updated_at, w.deleted as i64],
+                params![user_id, w.normalized, w.word, w.definition, w.updated_at, w.deleted as i64],
             )?;
         }
         tx.commit()
@@ -958,5 +1015,107 @@ mod tests {
         assert_eq!(items[0].label.as_deref(), Some("новое"));
         // Другой пользователь не видит чужие закладки.
         assert_eq!(db.bookmarks_since("u2", 0).unwrap().len(), 0);
+    }
+
+    fn dp(device: &str, progress: f64, updated: i64) -> crate::models::DeviceProgress {
+        crate::models::DeviceProgress {
+            user_id: None,
+            book_id: "b1".into(),
+            device_id: device.into(),
+            progress,
+            locator: None,
+            updated_at: updated,
+        }
+    }
+
+    #[test]
+    fn progress_scoped_by_account() {
+        let db = mem_db();
+        db.upsert_progress("u1", &dp("d1", 0.5, 2000)).unwrap();
+        db.upsert_progress("u2", &dp("d2", 0.9, 3000)).unwrap();
+        db.upsert_progress("", &dp("d3", 0.1, 4000)).unwrap(); // legacy без аккаунта
+        // Каждый аккаунт видит только свой прогресс («продолжить везде» per-user).
+        let p1 = db.latest_progress("u1", "b1").unwrap().unwrap();
+        assert_eq!(p1.progress, 0.5);
+        assert_eq!(p1.user_id.as_deref(), Some("u1"));
+        assert_eq!(db.latest_progress("u2", "b1").unwrap().unwrap().progress, 0.9);
+        assert_eq!(db.latest_progress("", "b1").unwrap().unwrap().progress, 0.1);
+        // LWW внутри аккаунта: старая метка не перезаписывает.
+        db.upsert_progress("u1", &dp("d1", 0.2, 1000)).unwrap();
+        assert_eq!(db.latest_progress("u1", "b1").unwrap().unwrap().progress, 0.5);
+    }
+
+    fn word(normalized: &str, def: &str, updated: i64) -> crate::models::WordSyncItem {
+        crate::models::WordSyncItem {
+            normalized: normalized.into(),
+            word: normalized.into(),
+            definition: Some(def.into()),
+            updated_at: updated,
+            deleted: false,
+        }
+    }
+
+    #[test]
+    fn words_scoped_by_account() {
+        let db = mem_db();
+        db.upsert_words("u1", &[word("кот", "у1", 2000)]).unwrap();
+        db.upsert_words("u2", &[word("кот", "у2", 3000)]).unwrap();
+        // Слова разных аккаунтов не пересекаются (раньше словарь был общий).
+        let w1 = db.words_since("u1", 0).unwrap();
+        assert_eq!(w1.len(), 1);
+        assert_eq!(w1[0].definition.as_deref(), Some("у1"));
+        assert_eq!(db.words_since("u2", 0).unwrap()[0].definition.as_deref(), Some("у2"));
+        assert_eq!(db.words_since("", 0).unwrap().len(), 0);
+        // LWW внутри аккаунта.
+        db.upsert_words("u1", &[word("кот", "старое", 1000)]).unwrap();
+        assert_eq!(
+            db.words_since("u1", 0).unwrap()[0].definition.as_deref(),
+            Some("у1")
+        );
+    }
+
+    #[test]
+    fn migrates_old_progress_and_words_to_legacy_scope() {
+        // Старая схема (без user_id) + данные → open() перестраивает таблицы,
+        // строки попадают в legacy-скоуп '' и не теряются.
+        let dir = std::env::temp_dir().join(format!("chitalka_mig_test_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("old.db");
+        let _ = std::fs::remove_file(&path);
+        {
+            let conn = Connection::open(&path).unwrap();
+            conn.execute_batch(
+                "CREATE TABLE progress (
+                     book_id TEXT NOT NULL,
+                     device_id TEXT NOT NULL,
+                     progress REAL NOT NULL,
+                     locator TEXT,
+                     updated_at INTEGER NOT NULL,
+                     PRIMARY KEY (book_id, device_id)
+                 );
+                 CREATE TABLE words (
+                     normalized TEXT PRIMARY KEY,
+                     word TEXT NOT NULL,
+                     definition TEXT,
+                     updated_at INTEGER NOT NULL,
+                     deleted INTEGER NOT NULL DEFAULT 0
+                 );
+                 INSERT INTO progress VALUES ('b1','d1',0.42,'cfi/5',1234);
+                 INSERT INTO words VALUES ('кот','кот','зверь',1234,0);",
+            )
+            .unwrap();
+        }
+        let db = Db::open(&path).unwrap();
+        let p = db.latest_progress("", "b1").unwrap().unwrap();
+        assert_eq!(p.progress, 0.42);
+        assert_eq!(p.device_id, "d1");
+        assert!(p.user_id.is_none());
+        let w = db.words_since("", 0).unwrap();
+        assert_eq!(w.len(), 1);
+        assert_eq!(w[0].definition.as_deref(), Some("зверь"));
+        // Аккаунты стартуют с чистого скоупа.
+        assert!(db.latest_progress("u1", "b1").unwrap().is_none());
+        drop(db);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

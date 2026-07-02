@@ -4,16 +4,25 @@
  * забираем чужие, сливаем по last-write-wins (тумбстоуны — для удалений).
  * Всё опционально: нет подключения — тихо ничего не делаем.
  */
+import { get } from 'svelte/store';
 import { wordsChangedSince, applyWordSync } from '@reader/core';
 import type { WordSyncItem } from '@reader/network';
 import { currentClient } from './store';
+import { session } from './auth';
 import { refreshWords } from '../words/store';
 
-const LAST_SYNC_KEY = 'reader:wordsSync';
+/**
+ * Метка последнего синка — per-account (Часть 6: словарь на сервере скоупится
+ * по JWT). При смене пользователя метка своя → первый синк нового аккаунта
+ * полный (все локальные слова уходят в его скоуп, его серверные — забираются).
+ */
+function lastSyncKey(): string {
+  return `reader:wordsSync:${get(session)?.user.id ?? 'anon'}`;
+}
 
 function readLastSync(): number {
   try {
-    return Number(localStorage.getItem(LAST_SYNC_KEY)) || 0;
+    return Number(localStorage.getItem(lastSyncKey())) || 0;
   } catch {
     return 0;
   }
@@ -21,7 +30,7 @@ function readLastSync(): number {
 
 function writeLastSync(ts: number): void {
   try {
-    localStorage.setItem(LAST_SYNC_KEY, String(ts));
+    localStorage.setItem(lastSyncKey(), String(ts));
   } catch {
     /* нет localStorage — ок */
   }
