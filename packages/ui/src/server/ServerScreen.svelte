@@ -21,6 +21,7 @@
     searchCatalog,
     serverIdOf,
     restoreSession,
+    refreshStatus,
     downloadEntry,
     coverUrl,
   } from './store';
@@ -325,7 +326,13 @@
         <span class="dot"></span>
         <strong>{$serverStatus.name ?? 'Сервер'}</strong>
         <span class="muted">книг: {$serverStatus.books ?? '—'}</span>
-        <button class="ghost" onclick={() => openCatalog()}>Обновить</button>
+        <button
+          class="ghost"
+          onclick={() => {
+            void refreshStatus(); // счётчик «книг: N» тоже освежаем
+            void openCatalog();
+          }}>Обновить</button
+        >
         {#if shareUrl}
           <button class="ghost" onclick={() => (showShare = !showShare)}>
             {showShare ? 'Скрыть адрес' : 'Поделиться доступом'}
