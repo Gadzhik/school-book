@@ -1,119 +1,94 @@
-/// <reference path="./jscanify-client.d.ts" />
 /**
  * Stage B: авто-поиск листа в кадре + коррекция перспективы (выправление
- * перекоса фото под углом). Тяжёлый OpenCV.js (~10МБ wasm) грузится ЛЕНИВО
- * только при первом вызове — не попадает в основной бандл.
+ * перекоса фото под углом). Вся тяжёлая работа (OpenCV.js ~10МБ wasm,
+ * Canny/contours/warp) выполняется в WEB WORKER — см. detect.worker.ts.
  *
- * OpenCV отдаётся как статический ассет по /opencv/opencv.js (вендорён из
- * @techstark/opencv-js, как foliate/tesseract) и кэшируется Service Worker'ом.
- * jscanify (MIT) — лёгкая обёртка corner-detection поверх глобального `cv`.
+ * Раньше OpenCV компилировался и считал в главном потоке: вкладка замирала
+ * на секунды при каждом фото (и на десятки секунд на первой — инициализация
+ * wasm). Теперь главный поток только декодирует фото в ImageData и кодирует
+ * результат в JPEG; UI остаётся живым.
  *
- * Если лист не найден или результат подозрительный — возвращаем null, и
- * вызывающий код оставляет исходный кадр (обрезка — «магия», не обязаловка).
+ * Если лист не найден / результат подозрительный / воркер недоступен —
+ * возвращаем null, и вызывающий код оставляет исходный кадр (обрезка —
+ * «магия», не обязаловка).
  */
 
-/** Путь к вендорённому OpenCV.js (см. vite.config static-copy + SW кэш). */
-const OPENCV_URL = '/opencv/opencv.js';
+/** Доля кадра, которую должен занимать найденный лист (защита от ложняков). */
+const MIN_FRAC = 0.2;
+const MAX_FRAC = 0.985;
+/** Максимум ожидания одного кадра (вкл. первую инициализацию OpenCV). */
+const JOB_TIMEOUT_MS = 45000;
 
-interface CvLike {
-  Mat: unknown;
-  imread(src: HTMLCanvasElement): unknown;
-  onRuntimeInitialized?: () => void;
+interface Job {
+  resolve: (img: ImageData | null) => void;
+  reject: (e: Error) => void;
+  timer: ReturnType<typeof setTimeout>;
 }
 
-let cvPromise: Promise<CvLike> | null = null;
+let worker: Worker | null = null;
+let seq = 0;
+const jobs = new Map<number, Job>();
 
-/** Лениво загрузить OpenCV.js (один раз за сессию страницы). */
-function loadOpenCv(): Promise<CvLike> {
-  if (cvPromise) return cvPromise;
-  cvPromise = new Promise<CvLike>((resolve, reject) => {
-    // OpenCV.js (Emscripten) инициализирует wasm асинхронно. Сигнал готовности —
-    // появление cv.Mat. Колбэк onRuntimeInitialized иногда не срабатывает
-    // (race/уже инициализирован), поэтому НАДЁЖНО опрашиваем cv.Mat + таймаут,
-    // чтобы добавление страницы не зависало навсегда.
-    const TIMEOUT_MS = 20000;
-    const getCv = () => (globalThis as unknown as { cv?: CvLike }).cv;
-    let done = false;
-    const finish = (cv?: CvLike, err?: Error) => {
-      if (done) return;
-      done = true;
-      clearInterval(poll);
-      clearTimeout(timer);
-      if (cv) resolve(cv);
-      else reject(err ?? new Error('OpenCV не готов'));
-    };
-    const poll = setInterval(() => {
-      const cv = getCv();
-      if (cv && cv.Mat) finish(cv);
-    }, 50);
-    const timer = setTimeout(
-      () => finish(undefined, new Error('OpenCV не инициализировался вовремя')),
-      TIMEOUT_MS,
-    );
+function failAll(err: Error): void {
+  for (const [, job] of jobs) {
+    clearTimeout(job.timer);
+    job.reject(err);
+  }
+  jobs.clear();
+}
 
-    // Уже готов.
-    const cur = getCv();
-    if (cur && cur.Mat) {
-      finish(cur);
-      return;
-    }
-    // Доп. сигнал к поллингу, если cv уже есть.
-    const hook = () => {
-      const cv = getCv();
-      if (cv && cv.Mat) finish(cv);
+/** Ленивый singleton-воркер детекции. null — Worker недоступен (SSR/старьё). */
+function getWorker(): Worker | null {
+  if (worker) return worker;
+  if (typeof Worker === 'undefined') return null;
+  try {
+    worker = new Worker(new URL('./detect.worker.ts', import.meta.url));
+  } catch {
+    return null;
+  }
+  worker.onmessage = (ev: MessageEvent) => {
+    const { id, ok, image, error } = ev.data as {
+      id: number;
+      ok: boolean;
+      image: ImageData | null;
+      error?: string;
     };
-    if (cur) {
-      try {
-        cur.onRuntimeInitialized = hook;
-      } catch {
-        /* поллинг подхватит */
-      }
-    }
-    // Скрипт уже добавлен (грузится) — поллинг дождётся готовности.
-    if (document.querySelector('script[data-opencv]')) return;
+    const job = jobs.get(id);
+    if (!job) return;
+    jobs.delete(id);
+    clearTimeout(job.timer);
+    if (ok) job.resolve(image);
+    else job.reject(new Error(error ?? 'Ошибка авто-обрезки'));
+  };
+  worker.onerror = () => {
+    failAll(new Error('Воркер авто-обрезки упал'));
+    worker?.terminate();
+    worker = null; // следующий вызов создаст заново
+  };
+  return worker;
+}
 
-    const script = document.createElement('script');
-    script.src = OPENCV_URL;
-    script.async = true;
-    script.dataset.opencv = '1';
-    script.onload = () => {
-      const cv = getCv();
-      if (cv && cv.Mat) finish(cv);
-      else if (cv) {
-        try {
-          cv.onRuntimeInitialized = hook;
-        } catch {
-          /* поллинг подхватит */
-        }
-      }
-      // если cv ещё нет — поллинг/таймаут разрулят
-    };
-    script.onerror = () => finish(undefined, new Error('Не удалось загрузить OpenCV.js'));
-    document.head.appendChild(script);
-  }).catch((err) => {
-    cvPromise = null; // дать шанс повторить позже
-    throw err;
+/** Прогнать кадр через воркер (с таймаутом; при зависании воркер пересоздаётся). */
+function runDetect(image: ImageData): Promise<ImageData | null> {
+  const w = getWorker();
+  if (!w) return Promise.resolve(null);
+  const id = ++seq;
+  return new Promise<ImageData | null>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      jobs.delete(id);
+      // Завис (кривая инициализация wasm и т.п.) — убиваем, дальше без обрезки.
+      failAll(new Error('Авто-обрезка не ответила вовремя'));
+      worker?.terminate();
+      worker = null;
+      resolve(null);
+    }, JOB_TIMEOUT_MS);
+    jobs.set(id, { resolve, reject, timer });
+    w.postMessage({ id, image, minFrac: MIN_FRAC, maxFrac: MAX_FRAC }, [image.data.buffer]);
   });
-  return cvPromise;
 }
 
-interface Point {
-  x: number;
-  y: number;
-}
-interface Corners {
-  topLeftCorner?: Point;
-  topRightCorner?: Point;
-  bottomLeftCorner?: Point;
-  bottomRightCorner?: Point;
-}
-
-function dist(a: Point, b: Point): number {
-  return Math.hypot(a.x - b.x, a.y - b.y);
-}
-
-/** Загрузить blob в canvas, уменьшив длинную сторону до maxSide. */
-async function blobToCanvas(blob: Blob, maxSide: number): Promise<HTMLCanvasElement> {
+/** Загрузить blob в ImageData, уменьшив длинную сторону до maxSide. */
+async function blobToImageData(blob: Blob, maxSide: number): Promise<ImageData> {
   const bitmap = await createImageBitmap(blob, { imageOrientation: 'from-image' });
   const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
   const w = Math.max(1, Math.round(bitmap.width * scale));
@@ -121,29 +96,43 @@ async function blobToCanvas(blob: Blob, maxSide: number): Promise<HTMLCanvasElem
   const canvas = document.createElement('canvas');
   canvas.width = w;
   canvas.height = h;
-  const ctx = canvas.getContext('2d');
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
   if (!ctx) {
     bitmap.close();
     throw new Error('Canvas 2D-контекст недоступен');
   }
   ctx.drawImage(bitmap, 0, 0, w, h);
   bitmap.close();
-  return canvas;
+  const data = ctx.getImageData(0, 0, w, h);
+  canvas.width = 0;
+  canvas.height = 0;
+  return data;
 }
 
-function canvasToBlob(canvas: HTMLCanvasElement, quality: number): Promise<Blob> {
-  return new Promise((resolve, reject) => {
+/** Закодировать ImageData в JPEG-Blob. */
+async function imageDataToBlob(image: ImageData, quality: number): Promise<Blob> {
+  const canvas = document.createElement('canvas');
+  canvas.width = image.width;
+  canvas.height = image.height;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('Canvas 2D-контекст недоступен');
+  ctx.putImageData(image, 0, 0);
+  const blob = await new Promise<Blob>((resolve, reject) => {
     canvas.toBlob(
       (b) => (b ? resolve(b) : reject(new Error('Не удалось закодировать JPEG'))),
       'image/jpeg',
       quality,
     );
   });
+  canvas.width = 0;
+  canvas.height = 0;
+  return blob;
 }
 
 /**
  * Найти лист и выправить перспективу. Возвращает обрезанный JPEG-Blob, либо
- * null если лист не обнаружен / результат неправдоподобен (тогда — исходник).
+ * null если лист не обнаружен / результат неправдоподобен / воркер недоступен
+ * (тогда вызывающий оставляет исходник).
  *
  * Работаем на уменьшенной копии (контроль памяти, ТЗ фичи); итог тоже ≤maxSide.
  */
@@ -152,60 +141,21 @@ export async function detectAndCrop(
   maxSide = 2000,
   quality = 0.85,
 ): Promise<Blob | null> {
-  // OpenCV-типы динамические — работаем через any, изолированно в этой функции.
-  /* eslint-disable @typescript-eslint/no-explicit-any */
-  const cv = (await loadOpenCv()) as any;
-  const { default: Jscanify } = await import('jscanify/client');
-  const scanner = new (Jscanify as any)();
-
-  const canvas = await blobToCanvas(blob, maxSide);
-  const cw = canvas.width;
-  const ch = canvas.height;
-  let mat: any = null;
-  let contour: any = null;
   try {
-    mat = cv.imread(canvas);
-    contour = scanner.findPaperContour(mat);
-    if (!contour) return null;
-
-    const c: Corners = scanner.getCornerPoints(contour);
-    const { topLeftCorner: tl, topRightCorner: tr, bottomLeftCorner: bl, bottomRightCorner: br } = c;
-    if (!tl || !tr || !bl || !br) return null;
-
-    // Размер результата — по сторонам найденного четырёхугольника.
-    const outW = Math.round(Math.max(dist(tl, tr), dist(bl, br)));
-    const outH = Math.round(Math.max(dist(tl, bl), dist(tr, br)));
-    if (outW < 8 || outH < 8) return null;
-
-    // Защита от ложного срабатывания: лист должен занимать заметную долю кадра.
-    // Площадь четырёхугольника (формула шнурков) против площади всего кадра.
-    const quadArea = Math.abs(
-      (tl.x * tr.y - tr.x * tl.y) +
-        (tr.x * br.y - br.x * tr.y) +
-        (br.x * bl.y - bl.x * br.y) +
-        (bl.x * tl.y - tl.x * bl.y),
-    ) / 2;
-    const frac = quadArea / (cw * ch);
-    // Слишком маленький (мусор/буква) или почти весь кадр (рамки нет) — пропуск.
-    if (frac < 0.2 || frac > 0.985) return null;
-
-    const result: HTMLCanvasElement | null = scanner.extractPaper(canvas, outW, outH, c);
-    if (!result) return null;
-    const cropped = await canvasToBlob(result, quality);
-    result.width = 0;
-    result.height = 0;
-    return cropped;
+    const image = await blobToImageData(blob, maxSide);
+    const warped = await runDetect(image);
+    if (!warped) return null;
+    return await imageDataToBlob(warped, quality);
   } catch {
     return null; // любая ошибка детекции — мягкий откат к исходнику
-  } finally {
-    if (mat) mat.delete();
-    canvas.width = 0;
-    canvas.height = 0;
   }
-  /* eslint-enable @typescript-eslint/no-explicit-any */
 }
 
-/** Доступна ли авто-обрезка в текущей среде (нужен браузер с canvas). */
+/** Доступна ли авто-обрезка в текущей среде (нужен браузер с canvas+Worker). */
 export function autoCropSupported(): boolean {
-  return typeof document !== 'undefined' && typeof createImageBitmap === 'function';
+  return (
+    typeof document !== 'undefined' &&
+    typeof createImageBitmap === 'function' &&
+    typeof Worker !== 'undefined'
+  );
 }
