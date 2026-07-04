@@ -46,7 +46,7 @@
       </button>
     {/if}
   </div>
-  {#if $adminError}<p class="error">{$adminError}</p>{/if}
+  {#if $adminError}<p class="error">{$t($adminError)}</p>{/if}
 
   {#if $auditEntries.length === 0}
     <p class="muted">{$t('Записей пока нет.')}</p>

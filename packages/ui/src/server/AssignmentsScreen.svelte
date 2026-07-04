@@ -83,7 +83,7 @@
       >{$t('Обновить')}</button
     >
   </div>
-  {#if $assignmentsError}<p class="error">{$assignmentsError}</p>{/if}
+  {#if $assignmentsError}<p class="error">{$t($assignmentsError)}</p>{/if}
 
   {#if teacher}
     <div class="create">

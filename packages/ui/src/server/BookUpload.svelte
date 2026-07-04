@@ -116,7 +116,7 @@
     </p>
   {/if}
 
-  {#if $uploadError}<p class="error">{$uploadError}</p>{/if}
+  {#if $uploadError}<p class="error">{$t($uploadError)}</p>{/if}
   {#if $uploadMsg}<p class="ok">{$uploadMsg}</p>{/if}
 
   <button class="primary" onclick={submit} disabled={!file || $uploading}>

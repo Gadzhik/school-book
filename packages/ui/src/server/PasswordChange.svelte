@@ -65,7 +65,7 @@
         autocomplete="new-password"
       />
       <button class="primary sm" onclick={submit} disabled={busy}>{$t('Сменить')}</button>
-      {#if error}<p class="error">{error}</p>{/if}
+      {#if error}<p class="error">{$t(error)}</p>{/if}
       {#if done}<p class="ok">{$t('Пароль изменён')}</p>{/if}
     </div>
   {/if}

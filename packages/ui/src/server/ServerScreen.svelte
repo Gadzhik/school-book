@@ -336,7 +336,7 @@
         </div>
       {/if}
 
-      {#if $connectError}<p class="error">{$connectError}</p>{/if}
+      {#if $connectError}<p class="error">{$t($connectError)}</p>{/if}
 
       <!-- Поднять локальный сервер (десктоп). На вебе/мобильном скрыто. -->
       <LocalServerPanel />
@@ -452,7 +452,7 @@
 
       {#if wordsMsg}<p class="muted">{wordsMsg}</p>{/if}
       {#if marksMsg}<p class="muted">{marksMsg}</p>{/if}
-      {#if $connectError}<p class="error">{$connectError}</p>{/if}
+      {#if $connectError}<p class="error">{$t($connectError)}</p>{/if}
 
       {#if !$session}
         <AuthScreen />
@@ -490,7 +490,7 @@
               <Icon name="close" size={16} /> {$t('Назад')}
             </button>
           {/if}
-          <h2 class="feed-title">{$catalog.feed.title}</h2>
+          <h2 class="feed-title">{$t($catalog.feed.title)}</h2>
         </div>
         {#if $catalog.feed.entries.length === 0}
           <p class="muted">{$t('Каталог пуст.')}</p>
@@ -508,7 +508,7 @@
                   onerror={(e) => ((e.currentTarget as HTMLImageElement).style.display = 'none')}
                 />
               {/if}
-              <span class="e-title">{entry.title}</span>
+              <span class="e-title">{$t(entry.title)}</span>
               {#if entry.authors.length}
                 <span class="muted">{entry.authors.join(', ')}</span>
               {/if}
