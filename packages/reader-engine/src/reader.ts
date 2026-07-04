@@ -227,6 +227,8 @@ export class ReaderController {
   #container: HTMLElement;
   /** PDF и pre-paginated EPUB: фиксированная вёрстка, своя логика отображения. */
   #fixedLayout = false;
+  /** Масштаб fixed-layout поверх fit-width/fit-page (1 = как вписано). */
+  #zoomFactor = 1;
   /** Рендерить ли формулы (KaTeX) в загружаемых документах. */
   #mathEnabled = true;
   /** Веб-TTS контроллер (создаётся лениво). */
@@ -453,6 +455,7 @@ export class ReaderController {
         'zoom',
         t.maxColumns === 1 ? 'fit-width' : 'fit-page',
       );
+      this.#view.renderer.setAttribute('zoom-factor', String(this.#zoomFactor));
       return;
     }
 
@@ -467,6 +470,21 @@ export class ReaderController {
   /** Фиксированная ли вёрстка у открытой книги (PDF/pre-paginated). */
   get isFixedLayout(): boolean {
     return this.#fixedLayout;
+  }
+
+  /**
+   * Масштаб fixed-layout (PDF/CBZ) поверх вписывания: 1 = как вписано,
+   * 1.5 = на 50% крупнее (появляется прокрутка/панорамирование). 0.5–4.
+   */
+  setZoomFactor(f: number): void {
+    this.#zoomFactor = Math.min(4, Math.max(0.5, f));
+    if (this.#fixedLayout && this.#view) {
+      this.#view.renderer.setAttribute('zoom-factor', String(this.#zoomFactor));
+    }
+  }
+
+  get zoomFactor(): number {
+    return this.#zoomFactor;
   }
 
   /** Применить новые настройки типографики/темы. */

@@ -30,7 +30,7 @@ const getViewport = (doc, viewport) => {
 }
 
 export class FixedLayout extends HTMLElement {
-    static observedAttributes = ['zoom']
+    static observedAttributes = ['zoom', 'zoom-factor']
     #root = this.attachShadow({ mode: 'closed' })
     #observer = new ResizeObserver(() => this.#render())
     #spreads
@@ -43,6 +43,10 @@ export class FixedLayout extends HTMLElement {
     #center
     #side
     #zoom
+    // Патч: множитель масштаба ПОВЕРХ вычисленного fit-width/fit-page
+    // (атрибут zoom-factor). Абсолютный числовой zoom неудобен: зависит от
+    // натурального размера страницы PDF, а «120% от вписанного» — предсказуем.
+    #zoomFactor = 1
     // Патч: свайп-навигация. В отличие от paginator (reflowable), у
     // fixed-layout не было тач-обработки вовсе — PDF/CBZ на телефоне нельзя
     // было листать свайпом. Горизонтальный жест ≥50px → prev/next.
@@ -57,6 +61,8 @@ export class FixedLayout extends HTMLElement {
         if (!start) return
         // Пинч-зум или зумленная страница — не листаем.
         if (globalThis.visualViewport && globalThis.visualViewport.scale > 1) return
+        // Увеличено кнопками масштаба — свайп нужен для панорамирования.
+        if (this.#zoomFactor > 1.01) return
         const t = e.changedTouches[0]
         if (!t) return
         const dx = t.screenX - start.x
@@ -74,12 +80,14 @@ export class FixedLayout extends HTMLElement {
 
         const sheet = new CSSStyleSheet()
         this.#root.adoptedStyleSheets = [sheet]
+        // Патч: `safe center` вместо `center` — при увеличении сверх контейнера
+        // обычный center обрезает верх/лево без возможности доскроллить.
         sheet.replaceSync(`:host {
             width: 100%;
             height: 100%;
             display: flex;
-            justify-content: center;
-            align-items: center;
+            justify-content: safe center;
+            align-items: safe center;
             overflow: auto;
         }`)
 
@@ -97,6 +105,10 @@ export class FixedLayout extends HTMLElement {
             case 'zoom':
                 this.#zoom = value !== 'fit-width' && value !== 'fit-page'
                     ? parseFloat(value) : value
+                this.#render()
+                break
+            case 'zoom-factor':
+                this.#zoomFactor = parseFloat(value) || 1
                 this.#render()
                 break
         }
@@ -163,7 +175,7 @@ export class FixedLayout extends HTMLElement {
                         height / Math.max(
                             left.height ?? blankHeight,
                             right.height ?? blankHeight)))
-            ) || 1
+            ) * this.#zoomFactor || 1
 
         const transform = frame => {
             let { element, iframe, width, height, blank, onZoom } = frame
