@@ -5,7 +5,7 @@
  * Клиент скачивает пак кнопкой в настройках, хранит в OPFS и подключает к
  * core-словарю (registerDictionary) при каждом старте — дальше офлайн.
  */
-import { registerDictionary, type DictEntry } from '@reader/core';
+import { registerDictionary, getDB, isOpfsSupported, type DictEntry } from '@reader/core';
 import { currentClient } from './store';
 import { tr } from '../i18n';
 
@@ -14,12 +14,16 @@ const DIR = 'dict';
 /** Языки, паки которых пробуем подгрузить при старте. */
 const LANGS = ['ru', 'en'];
 
+/** Ключ пака в IndexedDB-сторе 'blobs' (фолбэк без OPFS — Android WebView). */
+const idbKey = (lang: string) => `dict:${lang}`;
+
 async function dictDir(create: boolean): Promise<FileSystemDirectoryHandle | null> {
+  if (!isOpfsSupported()) return null;
   try {
     const root = await navigator.storage.getDirectory();
     return await root.getDirectoryHandle(DIR, { create });
   } catch {
-    return null; // нет OPFS — словарь-пак недоступен (остаётся встроенный)
+    return null;
   }
 }
 
@@ -30,26 +34,39 @@ function toEntries(pack: Record<string, string>): DictEntry[] {
   }));
 }
 
-/** Прочитать сохранённый пак с диска. null — нет/битый. */
+/** Прочитать сохранённый пак: OPFS, иначе IndexedDB. null — нет/битый. */
 async function readPack(lang: string): Promise<Record<string, string> | null> {
-  const dir = await dictDir(false);
-  if (!dir) return null;
   try {
-    const fh = await dir.getFileHandle(`${lang}.json`);
-    const text = await (await fh.getFile()).text();
-    return JSON.parse(text) as Record<string, string>;
+    const dir = await dictDir(false);
+    if (dir) {
+      const fh = await dir.getFileHandle(`${lang}.json`);
+      const text = await (await fh.getFile()).text();
+      return JSON.parse(text) as Record<string, string>;
+    }
+  } catch {
+    /* в OPFS нет — пробуем IndexedDB */
+  }
+  try {
+    const blob = await (await getDB()).get('blobs', idbKey(lang));
+    if (!blob) return null;
+    return JSON.parse(await blob.text()) as Record<string, string>;
   } catch {
     return null;
   }
 }
 
+/** Сохранить пак: OPFS, а без него (Android WebView) — IndexedDB 'blobs'. */
 async function writePack(lang: string, pack: Record<string, string>): Promise<void> {
+  const json = JSON.stringify(pack);
   const dir = await dictDir(true);
-  if (!dir) throw new Error(tr('Хранилище недоступно (OPFS)'));
-  const fh = await dir.getFileHandle(`${lang}.json`, { create: true });
-  const w = await fh.createWritable();
-  await w.write(JSON.stringify(pack));
-  await w.close();
+  if (dir) {
+    const fh = await dir.getFileHandle(`${lang}.json`, { create: true });
+    const w = await fh.createWritable();
+    await w.write(json);
+    await w.close();
+    return;
+  }
+  await (await getDB()).put('blobs', new Blob([json], { type: 'application/json' }), idbKey(lang));
 }
 
 /** Слов в сохранённых паках по языкам (для настроек). */

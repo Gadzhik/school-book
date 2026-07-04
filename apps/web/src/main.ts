@@ -16,6 +16,23 @@ import { get } from 'svelte/store';
 import App from './App.svelte';
 import './app.css';
 
+// Полифилл Array.prototype.at для старых Android System WebView (Chrome <92):
+// его использует foliate-js при разборе CFI — без него не работают выделения,
+// заметки учителя и переходы по закладкам («parts?.at is not a function»).
+if (!Array.prototype.at) {
+  // eslint-disable-next-line no-extend-native
+  Object.defineProperty(Array.prototype, 'at', {
+    value: function at(this: unknown[], n: number) {
+      const len = this.length;
+      let i = Math.trunc(n) || 0;
+      if (i < 0) i += len;
+      return i < 0 || i >= len ? undefined : this[i];
+    },
+    writable: true,
+    configurable: true,
+  });
+}
+
 async function bootstrap() {
   // Просим браузер не вытеснять данные (важно для iOS Safari).
   await requestPersistentStorage();

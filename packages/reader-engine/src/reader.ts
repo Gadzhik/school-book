@@ -414,7 +414,10 @@ export class ReaderController {
 
     if (this.#cb.onSelection) {
       // После выделения фрагмента — отдаём текст и рамку для попапа помощника.
-      doc.addEventListener('mouseup', () => {
+      // mouseup покрывает мышь; на тач-устройствах long-press-выделение mouseup
+      // НЕ даёт — дублируем через selectionchange с дебаунсом (ждём, пока
+      // пользователь отпустит/дотянет хэндлы выделения).
+      const reportSelection = () => {
         const sel = doc.getSelection?.();
         const text = sel?.toString().trim() ?? '';
         if (text.length >= 2 && sel && sel.rangeCount > 0) {
@@ -432,6 +435,12 @@ export class ReaderController {
         } else {
           this.#cb.onSelection?.(null);
         }
+      };
+      doc.addEventListener('mouseup', reportSelection);
+      let selTimer: ReturnType<typeof setTimeout> | undefined;
+      doc.addEventListener('selectionchange', () => {
+        clearTimeout(selTimer);
+        selTimer = setTimeout(reportSelection, 350);
       });
     }
 

@@ -692,7 +692,6 @@ export const en: Record<string, string> = {
   'Скачать словарь с сервера': 'Download dictionary from server',
   'Готово: {0} слов доступно офлайн.': 'Done: {0} words available offline.',
   'Не удалось скачать словарь': 'Failed to download the dictionary',
-  'Хранилище недоступно (OPFS)': 'Storage unavailable (OPFS)',
   'На сервере нет словаря для этого языка': 'The server has no dictionary for this language',
 
   // — Читательский дневник —
