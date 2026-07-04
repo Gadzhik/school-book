@@ -153,6 +153,87 @@ export interface AuditEntry {
   detail?: string;
 }
 
+/** Строка сводного прогресса класса: ученик × книга. */
+export interface ClassProgressRow {
+  userId: string;
+  fullName: string;
+  bookId: string;
+  bookTitle: string;
+  /** Доля прочитанного 0..1. */
+  fraction: number;
+  updatedAt: number;
+}
+
+/** Заметка учителя, видимая классу. */
+export interface ClassNote {
+  id: string;
+  bookId: string;
+  classId: string;
+  cfi: string;
+  text: string;
+  note?: string;
+  color?: string;
+  createdBy: string;
+  authorName: string;
+  updatedAt: number;
+}
+
+/** Публикация заметки классам. */
+export interface ClassNoteInput {
+  bookId: string;
+  classIds: string[];
+  cfi: string;
+  text: string;
+  note?: string;
+  color?: string;
+}
+
+/** Вопрос квиза. `correct` присутствует только у учителя/автора. */
+export interface QuizQuestion {
+  q: string;
+  options: string[];
+  correct?: number;
+}
+
+/** Квиз от учителя. У ученика — без correct, с его результатом. */
+export interface Quiz {
+  id: string;
+  bookId: string;
+  bookTitle: string;
+  classId: string;
+  title: string;
+  questions: QuizQuestion[];
+  createdBy?: string;
+  createdAt?: number;
+  myScore?: number | null;
+  myTotal?: number | null;
+}
+
+/** Данные создания квиза (correct обязателен). */
+export interface QuizInput {
+  bookId?: string;
+  classId: string;
+  title: string;
+  questions: { q: string; options: string[]; correct: number }[];
+}
+
+/** Результат проверки ответов сервером. */
+export interface QuizScore {
+  score: number;
+  total: number;
+  /** true — вопрос отвечен верно (для разбора). */
+  per_question: boolean[];
+}
+
+/** Строка результатов квиза для учителя. */
+export interface QuizResultRow {
+  userId: string;
+  fullName: string;
+  score: number;
+  total: number;
+  updatedAt: number;
+}
+
 /** Строка отчёта по классу. */
 export interface AssignmentReportRow {
   userId: string;

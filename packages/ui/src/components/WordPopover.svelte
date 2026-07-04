@@ -14,7 +14,17 @@
   const { word, rect, onclose, onsave }: Props = $props();
 
   const syllables = $derived(hyphenateSyllables(word));
-  const entry = $derived(lookupWord(word));
+  // Скачанные словарные паки подключаются лениво (OPFS → registerDictionary);
+  // после подключения ищем повторно — реактивность через packsReady.
+  let packsReady = $state(false);
+  void import('../server/dictionary-pack').then(async (m) => {
+    await m.initDictionaryPacks();
+    packsReady = true;
+  });
+  const entry = $derived.by(() => {
+    void packsReady; // перечитать после подключения паков
+    return lookupWord(word);
+  });
 
   let saved = $state(false);
   function save() {

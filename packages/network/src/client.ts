@@ -23,6 +23,13 @@ import type {
   BookmarkSyncItem,
   HighlightSyncItem,
   UpdateInfo,
+  ClassProgressRow,
+  ClassNote,
+  ClassNoteInput,
+  Quiz,
+  QuizInput,
+  QuizScore,
+  QuizResultRow,
 } from './types';
 
 export interface ClientOptions {
@@ -354,6 +361,75 @@ export class LibraryServerClient {
   async assignmentReport(id: string): Promise<AssignmentReportRow[]> {
     const res = await this.#fetch(`/api/assignments/${encodeURIComponent(id)}/report`);
     return (await res.json()) as AssignmentReportRow[];
+  }
+
+  // --- Панель класса, заметки классу, квизы ---
+
+  /** Сводный прогресс чтения класса (учитель класса/админ/power). */
+  async classProgress(classId: string): Promise<ClassProgressRow[]> {
+    const res = await this.#fetch(`/api/class/${encodeURIComponent(classId)}/progress`);
+    return (await res.json()) as ClassProgressRow[];
+  }
+
+  /** Заметки учителя по книге, видимые текущему пользователю. */
+  async classNotes(bookId: string): Promise<ClassNote[]> {
+    const res = await this.#fetch(`/api/class-notes?bookId=${encodeURIComponent(bookId)}`);
+    return (await res.json()) as ClassNote[];
+  }
+
+  /** Опубликовать заметку классам (учитель — своим). */
+  async publishClassNote(input: ClassNoteInput): Promise<void> {
+    await this.#fetch('/api/class-notes', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    });
+  }
+
+  /** Убрать заметку (у всех классов публикации). Автор/админ/power. */
+  async deleteClassNote(id: string): Promise<void> {
+    await this.#fetch(`/api/class-notes/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  }
+
+  /** Квизы, видимые текущему пользователю (ученику — без правильных ответов). */
+  async listQuizzes(): Promise<Quiz[]> {
+    const res = await this.#fetch('/api/quizzes');
+    return (await res.json()) as Quiz[];
+  }
+
+  /** Создать квиз (учитель — для своего класса). */
+  async createQuiz(input: QuizInput): Promise<Quiz> {
+    return this.#postJson<Quiz>('/api/quizzes', input);
+  }
+
+  /** Удалить квиз (автор/админ/power). */
+  async deleteQuiz(id: string): Promise<void> {
+    await this.#fetch(`/api/quizzes/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  }
+
+  /** Сдать ответы; сервер проверяет и возвращает балл + разбор. */
+  async submitQuiz(id: string, answers: number[]): Promise<QuizScore> {
+    return this.#postJson<QuizScore>(`/api/quizzes/${encodeURIComponent(id)}/result`, { answers });
+  }
+
+  /** Результаты квиза по ученикам (учитель/автор/админ/power). */
+  async quizResults(id: string): Promise<QuizResultRow[]> {
+    const res = await this.#fetch(`/api/quizzes/${encodeURIComponent(id)}/results`);
+    return (await res.json()) as QuizResultRow[];
+  }
+
+  /**
+   * Скачать словарный пак с сервера: { "слово": "определение", … }.
+   * null — пака для языка нет (404).
+   */
+  async dictionaryPack(lang: string): Promise<Record<string, string> | null> {
+    try {
+      const res = await this.#fetch(`/api/dict/${encodeURIComponent(lang)}`);
+      return (await res.json()) as Record<string, string>;
+    } catch (e) {
+      if (e instanceof HttpError && e.status === 404) return null;
+      throw e;
+    }
   }
 
   // --- Аудит и бэкап (ТЗ Часть 6, E8+E9) ---

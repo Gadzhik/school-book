@@ -325,3 +325,158 @@ pub struct AuditEntry {
     pub action: String,
     pub detail: Option<String>,
 }
+
+// --- Панель класса: сводный прогресс чтения (E2) ---
+
+/// Строка сводного прогресса: ученик × книга (последняя позиция среди устройств).
+#[derive(Debug, Serialize)]
+pub struct ClassProgressRow {
+    #[serde(rename = "userId")]
+    pub user_id: String,
+    #[serde(rename = "fullName")]
+    pub full_name: String,
+    #[serde(rename = "bookId")]
+    pub book_id: String,
+    #[serde(rename = "bookTitle")]
+    pub book_title: String,
+    /// Доля прочитанного 0..1.
+    pub fraction: f64,
+    #[serde(rename = "updatedAt")]
+    pub updated_at: i64,
+}
+
+// --- Заметки учителя, видимые классу ---
+
+/// Заметка/выделение учителя, видимая ученикам класса.
+#[derive(Debug, Clone, Serialize)]
+pub struct ClassNote {
+    pub id: String,
+    /// id книги на сервере.
+    #[serde(rename = "bookId")]
+    pub book_id: String,
+    #[serde(rename = "classId")]
+    pub class_id: String,
+    pub cfi: String,
+    /// Выделенный текст (для списка/подсказки).
+    pub text: String,
+    #[serde(default)]
+    pub note: Option<String>,
+    #[serde(default)]
+    pub color: Option<String>,
+    #[serde(rename = "createdBy")]
+    pub created_by: String,
+    /// ФИО автора (денормализовано для отображения ученику).
+    #[serde(rename = "authorName")]
+    pub author_name: String,
+    #[serde(rename = "updatedAt")]
+    pub updated_at: i64,
+}
+
+/// Запрос публикации заметки классу (классы — где учитель ведёт).
+#[derive(Debug, Deserialize)]
+pub struct ClassNoteReq {
+    #[serde(rename = "bookId")]
+    pub book_id: String,
+    /// Каким классам показывать (все должны быть «своими» для учителя).
+    #[serde(rename = "classIds")]
+    pub class_ids: Vec<String>,
+    pub cfi: String,
+    pub text: String,
+    #[serde(default)]
+    pub note: Option<String>,
+    #[serde(default)]
+    pub color: Option<String>,
+}
+
+// --- Квизы от учителя ---
+
+/// Вопрос квиза. `correct` наружу ученикам НЕ отдаётся (см. QuizForStudent).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QuizQuestion {
+    pub q: String,
+    pub options: Vec<String>,
+    /// Индекс правильного варианта.
+    pub correct: usize,
+}
+
+/// Квиз (внутреннее/учительское представление — с ответами).
+#[derive(Debug, Clone, Serialize)]
+pub struct Quiz {
+    pub id: String,
+    #[serde(rename = "bookId")]
+    pub book_id: String,
+    #[serde(rename = "bookTitle")]
+    pub book_title: String,
+    #[serde(rename = "classId")]
+    pub class_id: String,
+    pub title: String,
+    pub questions: Vec<QuizQuestion>,
+    #[serde(rename = "createdBy")]
+    pub created_by: String,
+    #[serde(rename = "createdAt")]
+    pub created_at: i64,
+}
+
+/// Вопрос без правильного ответа (для прохождения учеником).
+#[derive(Debug, Serialize)]
+pub struct QuizQuestionPublic {
+    pub q: String,
+    pub options: Vec<String>,
+}
+
+/// Квиз для ученика: без правильных ответов + его результат, если сдавал.
+#[derive(Debug, Serialize)]
+pub struct QuizForStudent {
+    pub id: String,
+    #[serde(rename = "bookId")]
+    pub book_id: String,
+    #[serde(rename = "bookTitle")]
+    pub book_title: String,
+    #[serde(rename = "classId")]
+    pub class_id: String,
+    pub title: String,
+    pub questions: Vec<QuizQuestionPublic>,
+    #[serde(rename = "myScore")]
+    pub my_score: Option<i64>,
+    #[serde(rename = "myTotal")]
+    pub my_total: Option<i64>,
+}
+
+/// Запрос создания квиза.
+#[derive(Debug, Deserialize)]
+pub struct QuizReq {
+    #[serde(rename = "bookId", default)]
+    pub book_id: String,
+    #[serde(rename = "classId")]
+    pub class_id: String,
+    pub title: String,
+    pub questions: Vec<QuizQuestion>,
+}
+
+/// Ответы ученика: индексы выбранных вариантов по порядку вопросов.
+#[derive(Debug, Deserialize)]
+pub struct QuizAnswersReq {
+    pub answers: Vec<usize>,
+}
+
+/// Результат проверки: балл + поправильно ли каждый вопрос (для разбора).
+#[derive(Debug, Serialize)]
+pub struct QuizScore {
+    pub score: i64,
+    pub total: i64,
+    /// true — вопрос отвечен верно.
+    pub per_question: Vec<bool>,
+}
+
+/// Строка результатов квиза для учителя.
+#[derive(Debug, Serialize)]
+pub struct QuizResultRow {
+    #[serde(rename = "userId")]
+    pub user_id: String,
+    #[serde(rename = "fullName")]
+    pub full_name: String,
+    pub score: i64,
+    pub total: i64,
+    #[serde(rename = "updatedAt")]
+    pub updated_at: i64,
+}

@@ -9,8 +9,10 @@
     onsave: (note: string) => void;
     onremove: () => void;
     onclose: () => void;
+    /** Поделиться с классом (учитель, книга опубликована). Нет — кнопки нет. */
+    onshare?: (note: string) => void;
   }
-  const { highlight, onsave, onremove, onclose }: Props = $props();
+  const { highlight, onsave, onremove, onclose, onshare }: Props = $props();
 
   let note = $state('');
   // Заполняем из переданного выделения (компонент пересоздаётся на каждое).
@@ -39,6 +41,15 @@
     <button class="del" onclick={onremove}>
       <Icon name="trash" size={18} /> {$t('Удалить')}
     </button>
+    {#if onshare}
+      <button
+        class="share"
+        onclick={() => onshare(note.trim())}
+        title={$t('Показать это выделение и заметку ученикам класса')}
+      >
+        {$t('Классу')}
+      </button>
+    {/if}
     <button class="save" onclick={() => onsave(note.trim())}>{$t('Сохранить')}</button>
   </div>
 </div>
@@ -109,6 +120,11 @@
     border: none;
     background: var(--accent);
     color: var(--on-accent);
+  }
+  .share {
+    border: 1px solid var(--accent);
+    background: transparent;
+    color: var(--accent);
   }
   .icon-btn {
     display: flex;

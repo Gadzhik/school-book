@@ -44,8 +44,9 @@ use tower_http::trace::TraceLayer;
 use db::Db;
 use models::{
     Assignment, AssignmentForStudent, AssignmentProgressReq, AssignmentReq, AuthResponse, Book,
-    BookmarkSyncItem, DeviceProgress, HighlightSyncItem, LoginReq, RegisterReq, Role, ServerStatus,
-    User, UserStatus, WordSyncItem,
+    BookmarkSyncItem, ClassNote, ClassNoteReq, ClassProgressRow, DeviceProgress,
+    HighlightSyncItem, LoginReq, Quiz, QuizAnswersReq, QuizForStudent, QuizQuestionPublic,
+    QuizReq, QuizScore, RegisterReq, Role, ServerStatus, User, UserStatus, WordSyncItem,
 };
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -208,6 +209,18 @@ fn build_router(state: Arc<AppState>, web_dir: Option<PathBuf>) -> Router {
         .route("/api/assignments/{id}", delete(delete_assignment))
         .route("/api/assignments/{id}/progress", post(assignment_progress))
         .route("/api/assignments/{id}/report", get(assignment_report))
+        // Панель класса: сводный прогресс чтения (учитель своего класса).
+        .route("/api/class/{id}/progress", get(class_progress_report))
+        // Заметки учителя, видимые классу.
+        .route("/api/class-notes", get(get_class_notes).post(post_class_note))
+        .route("/api/class-notes/{id}", delete(delete_class_note_handler))
+        // Квизы от учителя.
+        .route("/api/quizzes", get(list_quizzes_handler).post(create_quiz_handler))
+        .route("/api/quizzes/{id}", delete(delete_quiz_handler))
+        .route("/api/quizzes/{id}/result", post(submit_quiz_result))
+        .route("/api/quizzes/{id}/results", get(quiz_results_handler))
+        // Офлайн-словарь: пак кладётся админом в library/_dict/<lang>.json[.gz].
+        .route("/api/dict/{lang}", get(dict_file))
         .route("/api/audit", get(get_audit))
         .route("/api/backup", get(backup))
         .route("/api/bookmarks", get(get_bookmarks).post(post_bookmarks))
@@ -1623,16 +1636,38 @@ async fn download(State(st): State<Arc<AppState>>, Path(id): Path<String>, req: 
     }
 }
 
-/// Обложка книги (EPUB). Токен — в query (для <img>). 404 — если обложки нет.
+/// Обложка книги (EPUB). Токен — в query (для <img> заголовки не шлются):
+/// либо код пэйринга, либо JWT. Видимость книги проверяется как у download —
+/// иначе по id утекали бы обложки скрытых от пользователя книг.
 async fn cover(
     State(st): State<Arc<AppState>>,
     Path(id): Path<String>,
     Query(q): Query<WsQuery>,
 ) -> Response {
-    if let Some(tok) = &st.token {
-        if q.token.as_deref() != Some(tok.as_str()) {
-            return StatusCode::UNAUTHORIZED.into_response();
+    // JWT из query → пользователь (для can_see). Не JWT — проверяем пэйринг.
+    let user = q
+        .token
+        .as_deref()
+        .and_then(|t| auth::verify_token(&st.jwt_secret, t))
+        .and_then(|c| st.db.user_by_id(&c.sub).ok().flatten());
+    if user.is_none() {
+        if let Some(tok) = &st.token {
+            if q.token.as_deref() != Some(tok.as_str()) {
+                return StatusCode::UNAUTHORIZED.into_response();
+            }
         }
+    }
+    let allowed = st
+        .db
+        .all_books_access()
+        .unwrap_or_default()
+        .into_iter()
+        .find(|b| b.book.id == id)
+        .map(|b| can_see(user.as_ref(), &b))
+        .unwrap_or(false);
+    if !allowed {
+        // 404 (не 403), чтобы не раскрывать существование скрытой книги.
+        return StatusCode::NOT_FOUND.into_response();
     }
     let Ok(Some(path)) = st.db.book_path(&id) else {
         return StatusCode::NOT_FOUND.into_response();
@@ -1816,6 +1851,391 @@ struct SinceQuery {
 #[derive(Deserialize)]
 struct WsQuery {
     token: Option<String>,
+}
+
+// --- Панель класса: сводный прогресс чтения (E2) ---
+
+/// Сводный прогресс класса: каждая строка — ученик × книга (последняя позиция
+/// среди его устройств). Права: учитель своего класса, admin/power — любые.
+async fn class_progress_report(
+    State(st): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Path(class_id): Path<String>,
+) -> Response {
+    let Some(me) = current_user(&st, &headers) else {
+        return StatusCode::UNAUTHORIZED.into_response();
+    };
+    if !can_manage_class(&me, &class_id) {
+        return (StatusCode::FORBIDDEN, "Нет прав на этот класс").into_response();
+    }
+    let students = match st.db.students_in_class(&class_id) {
+        Ok(v) => v,
+        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    };
+    // Названия книг каталога: book_id → title (книга могла быть удалена — id).
+    let titles: std::collections::HashMap<String, String> = st
+        .db
+        .all_books_access()
+        .unwrap_or_default()
+        .into_iter()
+        .map(|b| (b.book.id.clone(), b.book.title))
+        .collect();
+    let mut rows: Vec<ClassProgressRow> = Vec::new();
+    for s in students {
+        let progress = st.db.user_progress_latest(&s.id).unwrap_or_default();
+        for (book_id, fraction, updated_at) in progress {
+            rows.push(ClassProgressRow {
+                user_id: s.id.clone(),
+                full_name: s.full_name.clone(),
+                book_title: titles.get(&book_id).cloned().unwrap_or_else(|| book_id.clone()),
+                book_id,
+                fraction,
+                updated_at,
+            });
+        }
+    }
+    Json(rows).into_response()
+}
+
+// --- Заметки учителя, видимые классу ---
+
+#[derive(Deserialize)]
+struct BookQuery {
+    #[serde(rename = "bookId")]
+    book_id: String,
+}
+
+/// Заметки по книге, видимые текущему пользователю: ученик — заметки его
+/// классов; учитель — свои + классов, которые ведёт; admin/power — все.
+/// Дубли одной публикации (несколько классов) схлопываются.
+async fn get_class_notes(
+    State(st): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Query(q): Query<BookQuery>,
+) -> Response {
+    let Some(me) = current_user(&st, &headers) else {
+        return StatusCode::UNAUTHORIZED.into_response();
+    };
+    if me.status != UserStatus::Active {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    let notes = match st.db.class_notes_by_book(&q.book_id) {
+        Ok(v) => v,
+        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    };
+    let mut seen: std::collections::HashSet<(String, String)> = std::collections::HashSet::new();
+    let visible: Vec<ClassNote> = notes
+        .into_iter()
+        .filter(|n| match me.role {
+            Role::Admin | Role::Power => true,
+            Role::Teacher => n.created_by == me.id || me.classes.contains(&n.class_id),
+            Role::Student => me.classes.contains(&n.class_id),
+        })
+        .filter(|n| seen.insert((n.created_by.clone(), n.cfi.clone())))
+        .collect();
+    Json(visible).into_response()
+}
+
+/// Опубликовать заметку классам. Права: admin/power — любые классы;
+/// учитель — только свои (can_manage_class). Одна строка на класс.
+async fn post_class_note(
+    State(st): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Json(req): Json<ClassNoteReq>,
+) -> Response {
+    let Some(me) = current_user(&st, &headers) else {
+        return StatusCode::UNAUTHORIZED.into_response();
+    };
+    if me.status != UserStatus::Active || me.role == Role::Student {
+        return (StatusCode::FORBIDDEN, "Недостаточно прав").into_response();
+    }
+    if req.cfi.trim().is_empty() || req.class_ids.is_empty() {
+        return (StatusCode::BAD_REQUEST, "Некорректная форма").into_response();
+    }
+    for class_id in &req.class_ids {
+        if !can_manage_class(&me, class_id) {
+            return (StatusCode::FORBIDDEN, "Нет прав на этот класс").into_response();
+        }
+    }
+    for class_id in &req.class_ids {
+        let note = ClassNote {
+            id: uuid::Uuid::new_v4().to_string(),
+            book_id: req.book_id.clone(),
+            class_id: class_id.clone(),
+            cfi: req.cfi.clone(),
+            text: req.text.clone(),
+            note: req.note.clone(),
+            color: req.color.clone(),
+            created_by: me.id.clone(),
+            author_name: me.full_name.clone(),
+            updated_at: now_ms(),
+        };
+        if st.db.create_class_note(&note).is_err() {
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+    }
+    st.db.log_audit(&me.full_name, "class_note", &req.book_id);
+    StatusCode::NO_CONTENT.into_response()
+}
+
+/// Убрать заметку (у всех классов одной публикации). Автор или admin/power.
+async fn delete_class_note_handler(
+    State(st): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> Response {
+    let Some(me) = current_user(&st, &headers) else {
+        return StatusCode::UNAUTHORIZED.into_response();
+    };
+    if me.status != UserStatus::Active {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    let note = match st.db.class_note_by_id(&id) {
+        Ok(Some(n)) => n,
+        Ok(None) => return StatusCode::NOT_FOUND.into_response(),
+        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    };
+    let allowed = matches!(me.role, Role::Admin | Role::Power) || note.created_by == me.id;
+    if !allowed {
+        return (StatusCode::FORBIDDEN, "Недостаточно прав").into_response();
+    }
+    match st.db.delete_class_note(&id) {
+        Ok(true) => StatusCode::NO_CONTENT.into_response(),
+        Ok(false) => StatusCode::NOT_FOUND.into_response(),
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
+}
+
+// --- Квизы от учителя ---
+
+/// Убрать правильные ответы из вопросов (для выдачи ученику).
+fn quiz_public_questions(q: &Quiz) -> Vec<QuizQuestionPublic> {
+    q.questions
+        .iter()
+        .map(|x| QuizQuestionPublic { q: x.q.clone(), options: x.options.clone() })
+        .collect()
+}
+
+/// Список квизов. Ученик — квизы его классов БЕЗ правильных ответов (+свой
+/// результат); учитель — свои и своих классов (с ответами); admin/power — все.
+async fn list_quizzes_handler(State(st): State<Arc<AppState>>, headers: HeaderMap) -> Response {
+    let Some(me) = current_user(&st, &headers) else {
+        return StatusCode::UNAUTHORIZED.into_response();
+    };
+    if me.status != UserStatus::Active {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    let all = match st.db.list_quizzes() {
+        Ok(v) => v,
+        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    };
+    match me.role {
+        Role::Student => {
+            let list: Vec<QuizForStudent> = all
+                .into_iter()
+                .filter(|q| me.classes.contains(&q.class_id))
+                .map(|q| {
+                    let my = st.db.quiz_result_for(&q.id, &me.id).ok().flatten();
+                    QuizForStudent {
+                        questions: quiz_public_questions(&q),
+                        id: q.id,
+                        book_id: q.book_id,
+                        book_title: q.book_title,
+                        class_id: q.class_id,
+                        title: q.title,
+                        my_score: my.map(|x| x.0),
+                        my_total: my.map(|x| x.1),
+                    }
+                })
+                .collect();
+            Json(list).into_response()
+        }
+        Role::Teacher => {
+            let list: Vec<Quiz> = all
+                .into_iter()
+                .filter(|q| q.created_by == me.id || me.classes.contains(&q.class_id))
+                .collect();
+            Json(list).into_response()
+        }
+        Role::Admin | Role::Power => Json(all).into_response(),
+    }
+}
+
+/// Создать квиз. Права: can_manage_class. Валидация вопросов — на сервере.
+async fn create_quiz_handler(
+    State(st): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Json(req): Json<QuizReq>,
+) -> Response {
+    let Some(me) = current_user(&st, &headers) else {
+        return StatusCode::UNAUTHORIZED.into_response();
+    };
+    if !can_manage_class(&me, &req.class_id) {
+        return (StatusCode::FORBIDDEN, "Нет прав на этот класс").into_response();
+    }
+    if req.questions.is_empty() || req.questions.len() > 100 {
+        return (StatusCode::BAD_REQUEST, "Нужен хотя бы один вопрос").into_response();
+    }
+    for q in &req.questions {
+        if q.q.trim().is_empty() || q.options.len() < 2 || q.options.len() > 6
+            || q.correct >= q.options.len()
+            || q.options.iter().any(|o| o.trim().is_empty())
+        {
+            return (StatusCode::BAD_REQUEST, "Некорректный вопрос").into_response();
+        }
+    }
+    // Название книги — из каталога (если книга указана).
+    let book_title = if req.book_id.is_empty() {
+        String::new()
+    } else {
+        st.db
+            .all_books_access()
+            .unwrap_or_default()
+            .into_iter()
+            .find(|b| b.book.id == req.book_id)
+            .map(|b| b.book.title)
+            .unwrap_or_default()
+    };
+    let quiz = Quiz {
+        id: uuid::Uuid::new_v4().to_string(),
+        book_id: req.book_id,
+        book_title,
+        class_id: req.class_id,
+        title: if req.title.trim().is_empty() { "Квиз".to_string() } else { req.title.trim().to_string() },
+        questions: req.questions,
+        created_by: me.id.clone(),
+        created_at: now_ms(),
+    };
+    match st.db.create_quiz(&quiz) {
+        Ok(()) => {
+            st.db.log_audit(&me.full_name, "quiz_create", &quiz.title);
+            Json(quiz).into_response()
+        }
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
+}
+
+/// Удалить квиз (автор или admin/power).
+async fn delete_quiz_handler(
+    State(st): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> Response {
+    let Some(me) = current_user(&st, &headers) else {
+        return StatusCode::UNAUTHORIZED.into_response();
+    };
+    let Ok(Some(q)) = st.db.quiz_by_id(&id) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    let allowed = me.status == UserStatus::Active
+        && (matches!(me.role, Role::Admin | Role::Power) || q.created_by == me.id);
+    if !allowed {
+        return (StatusCode::FORBIDDEN, "Недостаточно прав").into_response();
+    }
+    match st.db.delete_quiz(&id) {
+        Ok(true) => {
+            st.db.log_audit(&me.full_name, "quiz_delete", &q.title);
+            StatusCode::NO_CONTENT.into_response()
+        }
+        Ok(false) => StatusCode::NOT_FOUND.into_response(),
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
+}
+
+/// Сдать ответы (ученик своего класса). Проверка — на сервере: правильные
+/// ответы ученику не отдаются. Пересдача перезаписывает результат.
+async fn submit_quiz_result(
+    State(st): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    Json(req): Json<QuizAnswersReq>,
+) -> Response {
+    let Some(me) = current_user(&st, &headers) else {
+        return StatusCode::UNAUTHORIZED.into_response();
+    };
+    let Ok(Some(quiz)) = st.db.quiz_by_id(&id) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    if me.status != UserStatus::Active
+        || me.role != Role::Student
+        || !me.classes.contains(&quiz.class_id)
+    {
+        return (StatusCode::FORBIDDEN, "Недостаточно прав").into_response();
+    }
+    if req.answers.len() != quiz.questions.len() {
+        return (StatusCode::BAD_REQUEST, "Ответьте на все вопросы").into_response();
+    }
+    let per_question: Vec<bool> = quiz
+        .questions
+        .iter()
+        .zip(req.answers.iter())
+        .map(|(q, a)| *a == q.correct)
+        .collect();
+    let score = per_question.iter().filter(|x| **x).count() as i64;
+    let total = quiz.questions.len() as i64;
+    let answers_json = serde_json::to_string(&req.answers).unwrap_or_else(|_| "[]".into());
+    if st.db.upsert_quiz_result(&id, &me.id, score, total, &answers_json).is_err() {
+        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    }
+    Json(QuizScore { score, total, per_question }).into_response()
+}
+
+/// Результаты квиза по ученикам (учитель класса/автор/admin/power).
+async fn quiz_results_handler(
+    State(st): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> Response {
+    let Some(me) = current_user(&st, &headers) else {
+        return StatusCode::UNAUTHORIZED.into_response();
+    };
+    let Ok(Some(quiz)) = st.db.quiz_by_id(&id) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    let allowed = me.status == UserStatus::Active
+        && (can_manage_class(&me, &quiz.class_id) || quiz.created_by == me.id);
+    if !allowed {
+        return (StatusCode::FORBIDDEN, "Недостаточно прав").into_response();
+    }
+    match st.db.quiz_results(&id) {
+        Ok(rows) => Json(rows).into_response(),
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
+}
+
+// --- Офлайн-словарь ---
+
+/// Отдать словарный пак `library/_dict/<lang>.json` (или .json.gz с
+/// Content-Encoding: gzip). Пак кладёт администратор вручную. 404 — пака нет.
+async fn dict_file(State(st): State<Arc<AppState>>, Path(lang): Path<String>) -> Response {
+    // Только короткий код языка — никаких путей.
+    if lang.len() > 3 || !lang.chars().all(|c| c.is_ascii_lowercase()) {
+        return StatusCode::BAD_REQUEST.into_response();
+    }
+    let dir = st.library.join("_dict");
+    let gz = dir.join(format!("{lang}.json.gz"));
+    if let Ok(bytes) = std::fs::read(&gz) {
+        return (
+            [
+                (header::CONTENT_TYPE, "application/json; charset=utf-8".to_string()),
+                (header::CONTENT_ENCODING, "gzip".to_string()),
+                (header::CACHE_CONTROL, "public, max-age=86400".to_string()),
+            ],
+            bytes,
+        )
+            .into_response();
+    }
+    match std::fs::read(dir.join(format!("{lang}.json"))) {
+        Ok(bytes) => (
+            [
+                (header::CONTENT_TYPE, "application/json; charset=utf-8".to_string()),
+                (header::CACHE_CONTROL, "public, max-age=86400".to_string()),
+            ],
+            bytes,
+        )
+            .into_response(),
+        Err(_) => StatusCode::NOT_FOUND.into_response(),
+    }
 }
 
 async fn get_words(

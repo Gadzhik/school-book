@@ -36,6 +36,8 @@
   import ApprovalsScreen from './ApprovalsScreen.svelte';
   import BookUpload from './BookUpload.svelte';
   import AssignmentsScreen from './AssignmentsScreen.svelte';
+  import ClassProgressPanel from './ClassProgressPanel.svelte';
+  import QuizzesPanel from './QuizzesPanel.svelte';
   import AdminPanel from './AdminPanel.svelte';
   import LocalServerPanel from './LocalServerPanel.svelte';
   import UpdatePanel from './UpdatePanel.svelte';
@@ -88,6 +90,8 @@
   let showApprovals = $state(false);
   let showUpload = $state(false);
   let showAssignments = $state(false);
+  let showClassProgress = $state(false);
+  let showQuizzes = $state(false);
   let showAdmin = $state(false);
 
   const ROLE_LABEL: Record<string, string> = {
@@ -407,6 +411,14 @@
             <button class="ghost sm" onclick={() => (showAssignments = !showAssignments)}>
               {showAssignments ? $t('Скрыть задания') : $t('Задания')}
             </button>
+            <button class="ghost sm" onclick={() => (showQuizzes = !showQuizzes)}>
+              {showQuizzes ? $t('Скрыть квизы') : $t('Квизы')}
+            </button>
+          {/if}
+          {#if $session.user.status === 'active' && canManage($session.user.role)}
+            <button class="ghost sm" onclick={() => (showClassProgress = !showClassProgress)}>
+              {showClassProgress ? $t('Скрыть класс') : $t('Мой класс')}
+            </button>
           {/if}
           {#if $session.user.status === 'active' && canAudit($session.user.role)}
             <button class="ghost sm" onclick={() => (showAdmin = !showAdmin)}>
@@ -429,6 +441,12 @@
       {/if}
       {#if $session && $session.user.status === 'active' && showAssignments}
         <AssignmentsScreen />
+      {/if}
+      {#if $session && $session.user.status === 'active' && showQuizzes}
+        <QuizzesPanel />
+      {/if}
+      {#if $session && $session.user.status === 'active' && canManage($session.user.role) && showClassProgress}
+        <ClassProgressPanel />
       {/if}
       {#if $session && $session.user.status === 'active' && canAudit($session.user.role) && showAdmin}
         <AdminPanel />

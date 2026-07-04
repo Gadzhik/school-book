@@ -7,9 +7,15 @@
   import { listSubjects, listClasses, type SubjectEntry, type ClassEntry } from '@reader/core';
   import { session } from './auth';
   import { uploadBook, uploading, uploadError, uploadMsg } from './upload';
-  import { t } from '../i18n';
+  import { t, tr } from '../i18n';
 
   let file = $state<File | null>(null);
+  // Сжатие PDF перед загрузкой (mupdf clean, без потери качества) — ручная
+  // опция; форму видят только учитель/power/админ (canUpload в ServerScreen).
+  let compressOpt = $state(false);
+  let compressing = $state(false);
+  let compressNote = $state('');
+  const isPdf = $derived(!!file && /\.pdf$/i.test(file.name));
   let title = $state('');
   let pickedClasses = $state<string[]>([]);
   let pickedSubjects = $state<string[]>([]);
@@ -50,8 +56,27 @@
   }
 
   async function submit() {
-    if (!file || $uploading) return;
-    const ok = await uploadBook(file, {
+    if (!file || $uploading || compressing) return;
+    let payload = file;
+    compressNote = '';
+    if (compressOpt && isPdf) {
+      compressing = true;
+      try {
+        const { compressPdf } = await import('@reader/converters');
+        const r = await compressPdf(file);
+        payload = r.file;
+        const mb = (n: number) => (n / 1024 / 1024).toFixed(1);
+        compressNote = r.compressed
+          ? tr('Сжато: {0} МБ → {1} МБ.', mb(r.before), mb(r.after))
+          : tr('PDF уже оптимален — сжатие не уменьшило файл.');
+      } catch (err) {
+        console.error(err);
+        compressNote = tr('Сжать не удалось — загружаю исходный файл.');
+      } finally {
+        compressing = false;
+      }
+    }
+    const ok = await uploadBook(payload, {
       title: title.trim() || undefined,
       classes: pickedClasses,
       subjects: pickedSubjects,
@@ -108,6 +133,13 @@
     <input type="checkbox" bind:checked={publicAll} />
     <span>{$t('Доступна всем (вся школа)')}</span>
   </label>
+  {#if isPdf}
+    <label class="public-toggle">
+      <input type="checkbox" bind:checked={compressOpt} />
+      <span>{$t('Сжать PDF перед загрузкой (без потери качества)')}</span>
+    </label>
+  {/if}
+  {#if compressNote}<p class="note">{compressNote}</p>{/if}
   {#if restricted}
     <p class="note">
       {$t(
@@ -119,8 +151,8 @@
   {#if $uploadError}<p class="error">{$t($uploadError)}</p>{/if}
   {#if $uploadMsg}<p class="ok">{$uploadMsg}</p>{/if}
 
-  <button class="primary" onclick={submit} disabled={!file || $uploading}>
-    {$uploading ? $t('Отправка…') : $t('Загрузить на сервер')}
+  <button class="primary" onclick={submit} disabled={!file || $uploading || compressing}>
+    {compressing ? $t('Сжатие PDF…') : $uploading ? $t('Отправка…') : $t('Загрузить на сервер')}
   </button>
 </section>
 

@@ -9,8 +9,9 @@ use std::sync::Mutex;
 use rusqlite::{params, Connection};
 
 use crate::models::{
-    Assignment, AssignmentReportRow, AuditEntry, Book, BookmarkSyncItem, DeviceProgress,
-    HighlightSyncItem, Role, User, UserStatus, WordSyncItem,
+    Assignment, AssignmentReportRow, AuditEntry, Book, BookmarkSyncItem, ClassNote,
+    DeviceProgress, HighlightSyncItem, Quiz, QuizQuestion, QuizResultRow, Role, User,
+    UserStatus, WordSyncItem,
 };
 
 /// Обёртка над соединением SQLite.
@@ -162,6 +163,37 @@ impl Db {
                  updated_at INTEGER NOT NULL,
                  deleted INTEGER NOT NULL DEFAULT 0,
                  PRIMARY KEY (user_id, id)
+             );
+             CREATE TABLE IF NOT EXISTS class_notes (
+                 id TEXT PRIMARY KEY,
+                 book_id TEXT NOT NULL,
+                 class_id TEXT NOT NULL,
+                 cfi TEXT NOT NULL,
+                 text TEXT NOT NULL,
+                 note TEXT,
+                 color TEXT,
+                 created_by TEXT NOT NULL,
+                 author_name TEXT NOT NULL,
+                 updated_at INTEGER NOT NULL
+             );
+             CREATE TABLE IF NOT EXISTS quizzes (
+                 id TEXT PRIMARY KEY,
+                 book_id TEXT NOT NULL DEFAULT '',
+                 book_title TEXT NOT NULL DEFAULT '',
+                 class_id TEXT NOT NULL,
+                 title TEXT NOT NULL,
+                 questions TEXT NOT NULL,
+                 created_by TEXT NOT NULL,
+                 created_at INTEGER NOT NULL
+             );
+             CREATE TABLE IF NOT EXISTS quiz_results (
+                 quiz_id TEXT NOT NULL,
+                 user_id TEXT NOT NULL,
+                 score INTEGER NOT NULL,
+                 total INTEGER NOT NULL,
+                 answers TEXT NOT NULL,
+                 updated_at INTEGER NOT NULL,
+                 PRIMARY KEY (quiz_id, user_id)
              );",
         )?;
         // Миграция старой БД: добавляем колонки тегов, если их нет (ошибку
@@ -777,6 +809,189 @@ impl Db {
         Ok(rows)
     }
 
+    // --- Панель класса: сводный прогресс (E2) ---
+
+    /// Последние позиции чтения пользователя по каждой книге (максимум по
+    /// updated_at среди устройств). (book_id, fraction, updated_at).
+    pub fn user_progress_latest(&self, user_id: &str) -> rusqlite::Result<Vec<(String, f64, i64)>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT book_id, progress, MAX(updated_at) FROM progress
+             WHERE user_id=?1 GROUP BY book_id",
+        )?;
+        let rows = stmt.query_map(params![user_id], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, f64>(1)?, r.get::<_, i64>(2)?))
+        })?;
+        rows.collect()
+    }
+
+    // --- Заметки учителя, видимые классу ---
+
+    pub fn create_class_note(&self, n: &ClassNote) -> rusqlite::Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO class_notes
+               (id,book_id,class_id,cfi,text,note,color,created_by,author_name,updated_at)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)",
+            params![
+                n.id, n.book_id, n.class_id, n.cfi, n.text, n.note, n.color, n.created_by,
+                n.author_name, n.updated_at
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// Все заметки по книге (фильтрация по правам — в хендлере).
+    pub fn class_notes_by_book(&self, book_id: &str) -> rusqlite::Result<Vec<ClassNote>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id,book_id,class_id,cfi,text,note,color,created_by,author_name,updated_at
+             FROM class_notes WHERE book_id=?1 ORDER BY updated_at",
+        )?;
+        let rows = stmt.query_map(params![book_id], map_class_note)?;
+        rows.collect()
+    }
+
+    pub fn class_note_by_id(&self, id: &str) -> rusqlite::Result<Option<ClassNote>> {
+        let conn = self.conn.lock().unwrap();
+        let r = conn.query_row(
+            "SELECT id,book_id,class_id,cfi,text,note,color,created_by,author_name,updated_at
+             FROM class_notes WHERE id=?1",
+            params![id],
+            map_class_note,
+        );
+        match r {
+            Ok(n) => Ok(Some(n)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+
+    /// Удалить заметку (вместе с дублями той же публикации в других классах —
+    /// по совпадению created_by+book_id+cfi, чтобы «убрать заметку» убирало её
+    /// у всех классов одной кнопкой).
+    pub fn delete_class_note(&self, id: &str) -> rusqlite::Result<bool> {
+        let conn = self.conn.lock().unwrap();
+        let n = conn.execute(
+            "DELETE FROM class_notes WHERE id=?1
+               OR (created_by, book_id, cfi) =
+                  (SELECT created_by, book_id, cfi FROM class_notes WHERE id=?1)",
+            params![id],
+        )?;
+        Ok(n > 0)
+    }
+
+    // --- Квизы от учителя ---
+
+    pub fn create_quiz(&self, q: &Quiz) -> rusqlite::Result<()> {
+        let questions =
+            serde_json::to_string(&q.questions).unwrap_or_else(|_| "[]".to_string());
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO quizzes
+               (id,book_id,book_title,class_id,title,questions,created_by,created_at)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
+            params![
+                q.id, q.book_id, q.book_title, q.class_id, q.title, questions, q.created_by,
+                q.created_at
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// Все квизы (фильтрация по правам — в хендлере; нагрузка школьная, мало).
+    pub fn list_quizzes(&self) -> rusqlite::Result<Vec<Quiz>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id,book_id,book_title,class_id,title,questions,created_by,created_at
+             FROM quizzes ORDER BY created_at DESC",
+        )?;
+        let rows = stmt.query_map([], map_quiz)?;
+        rows.collect()
+    }
+
+    pub fn quiz_by_id(&self, id: &str) -> rusqlite::Result<Option<Quiz>> {
+        let conn = self.conn.lock().unwrap();
+        let r = conn.query_row(
+            "SELECT id,book_id,book_title,class_id,title,questions,created_by,created_at
+             FROM quizzes WHERE id=?1",
+            params![id],
+            map_quiz,
+        );
+        match r {
+            Ok(q) => Ok(Some(q)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+
+    pub fn delete_quiz(&self, id: &str) -> rusqlite::Result<bool> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM quiz_results WHERE quiz_id=?1", params![id])?;
+        let n = conn.execute("DELETE FROM quizzes WHERE id=?1", params![id])?;
+        Ok(n > 0)
+    }
+
+    /// Сохранить результат ученика (пересдача перезаписывает).
+    pub fn upsert_quiz_result(
+        &self,
+        quiz_id: &str,
+        user_id: &str,
+        score: i64,
+        total: i64,
+        answers_json: &str,
+    ) -> rusqlite::Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO quiz_results (quiz_id,user_id,score,total,answers,updated_at)
+             VALUES (?1,?2,?3,?4,?5,?6)
+             ON CONFLICT(quiz_id,user_id) DO UPDATE SET
+                 score=excluded.score, total=excluded.total,
+                 answers=excluded.answers, updated_at=excluded.updated_at",
+            params![quiz_id, user_id, score, total, answers_json, now_ms()],
+        )?;
+        Ok(())
+    }
+
+    /// Результат конкретного ученика: (score, total).
+    pub fn quiz_result_for(
+        &self,
+        quiz_id: &str,
+        user_id: &str,
+    ) -> rusqlite::Result<Option<(i64, i64)>> {
+        let conn = self.conn.lock().unwrap();
+        let r = conn.query_row(
+            "SELECT score,total FROM quiz_results WHERE quiz_id=?1 AND user_id=?2",
+            params![quiz_id, user_id],
+            |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?)),
+        );
+        match r {
+            Ok(v) => Ok(Some(v)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+
+    /// Результаты квиза по ученикам (для учителя).
+    pub fn quiz_results(&self, quiz_id: &str) -> rusqlite::Result<Vec<QuizResultRow>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT r.user_id, u.full_name, r.score, r.total, r.updated_at
+             FROM quiz_results r JOIN users u ON u.id = r.user_id
+             WHERE r.quiz_id=?1 ORDER BY u.full_name",
+        )?;
+        let rows = stmt.query_map(params![quiz_id], |r| {
+            Ok(QuizResultRow {
+                user_id: r.get(0)?,
+                full_name: r.get(1)?,
+                score: r.get(2)?,
+                total: r.get(3)?,
+                updated_at: r.get(4)?,
+            })
+        })?;
+        rows.collect()
+    }
+
     // --- Аудит и бэкап (ТЗ Часть 6, E8+E9) ---
 
     /// Записать действие в журнал (тихо: ошибка журнала не валит операцию).
@@ -920,6 +1135,35 @@ fn map_assignment(r: &rusqlite::Row) -> rusqlite::Result<Assignment> {
         due_at: r.get(6)?,
         created_by: r.get(7)?,
         created_at: r.get(8)?,
+    })
+}
+
+fn map_class_note(r: &rusqlite::Row) -> rusqlite::Result<ClassNote> {
+    Ok(ClassNote {
+        id: r.get(0)?,
+        book_id: r.get(1)?,
+        class_id: r.get(2)?,
+        cfi: r.get(3)?,
+        text: r.get(4)?,
+        note: r.get(5)?,
+        color: r.get(6)?,
+        created_by: r.get(7)?,
+        author_name: r.get(8)?,
+        updated_at: r.get(9)?,
+    })
+}
+
+fn map_quiz(r: &rusqlite::Row) -> rusqlite::Result<Quiz> {
+    let questions: String = r.get(5)?;
+    Ok(Quiz {
+        id: r.get(0)?,
+        book_id: r.get(1)?,
+        book_title: r.get(2)?,
+        class_id: r.get(3)?,
+        title: r.get(4)?,
+        questions: serde_json::from_str::<Vec<QuizQuestion>>(&questions).unwrap_or_default(),
+        created_by: r.get(6)?,
+        created_at: r.get(7)?,
     })
 }
 
