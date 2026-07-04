@@ -10,6 +10,16 @@
     />
     <link rel="icon" type="image/svg+xml" href="/icon.svg" />
     <title>Читалка для школьников</title>
+    <script>
+      // До загрузки приложения: язык вкладки/заголовка из сохранённого выбора
+      // (reader:locale), чтобы title не мигал русским при английском UI.
+      try {
+        if (localStorage.getItem('reader:locale') === 'en') {
+          document.documentElement.lang = 'en';
+          document.title = 'Reader for schoolkids';
+        }
+      } catch (e) {}
+    </script>
   </head>
   <body>
     <div id="app"></div>

@@ -28,7 +28,7 @@
       <CaptureStep />
 
       {#if $scannerError}
-        <p class="error">{$scannerError}</p>
+        <p class="error">{$t($scannerError)}</p>
       {/if}
 
       {#if $pages.length > 0}

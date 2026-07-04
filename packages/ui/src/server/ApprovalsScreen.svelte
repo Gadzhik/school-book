@@ -34,7 +34,7 @@
       >{$t('Обновить')}</button
     >
   </div>
-  {#if $approvalsError}<p class="error">{$approvalsError}</p>{/if}
+  {#if $approvalsError}<p class="error">{$t($approvalsError)}</p>{/if}
 
   <h3>{$t('Ожидают одобрения ({0})', pending.length)}</h3>
   {#if pending.length === 0}

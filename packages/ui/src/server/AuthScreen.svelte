@@ -252,7 +252,7 @@
   {/if}
 
   {#if $connectError}
-    <p class="error">{$connectError}</p>
+    <p class="error">{$t($connectError)}</p>
     {#if $connection && !connected}
       <!-- Сервер был недоступен в момент открытия страницы (например,
            перезапускался) — повторная попытка без повторного ввода адреса. -->
@@ -261,7 +261,7 @@
       </button>
     {/if}
   {/if}
-  {#if $authError}<p class="error">{$authError}</p>{/if}
+  {#if $authError}<p class="error">{$t($authError)}</p>{/if}
 
   <button class="primary" onclick={submit} disabled={$authBusy || $connecting}>
     {$connecting

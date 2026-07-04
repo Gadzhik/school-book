@@ -100,7 +100,7 @@
     </button>
   </div>
 
-  {#if $usersError}<p class="error">{$usersError}</p>{/if}
+  {#if $usersError}<p class="error">{$t($usersError)}</p>{/if}
 
   {#if showCreate}
     <div class="create">

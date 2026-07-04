@@ -577,4 +577,46 @@ export const en: Record<string, string> = {
   'Не удалось скачать книгу': 'Failed to download the book',
   'Не удалось загрузить журнал': 'Failed to load the log',
   'Не удалось скачать копию': 'Failed to download the backup',
+
+  // — Тексты, приходящие С СЕРВЕРА (переводим на клиенте по точному совпадению) —
+  'Книга не найдена': 'Book not found',
+  'Логин уже занят': 'Login is already taken',
+  'Можно менять только свои книги': 'You can only modify your own books',
+  'Можно снимать с публикации только свои книги': 'You can only unpublish your own books',
+  'Не удалось прочитать файл': 'Failed to read the file',
+  'Неверный логин или пароль': 'Wrong login or password',
+  'Неверный текущий пароль': 'Wrong current password',
+  'Недостаточно прав для этой роли': 'Not enough permissions for this role',
+  'Недостаточно прав': 'Not enough permissions',
+  'Неизвестная роль': 'Unknown role',
+  'Некорректная форма': 'Invalid form data',
+  'Нельзя менять свою роль': 'You cannot change your own role',
+  'Нельзя удалить себя': 'You cannot delete yourself',
+  'Неподдерживаемый формат книги': 'Unsupported book format',
+  'Нет прав на добавление книг': 'No permission to add books',
+  'Нет прав на изменение книг': 'No permission to modify books',
+  'Нет прав на удаление книг': 'No permission to delete books',
+  'Нет прав на этот класс': 'No permission for this class',
+  'Свой пароль меняйте через смену пароля': 'Change your own password via password change',
+  'Укажите имя, логин и пароль (минимум 4 символа)':
+    'Provide a name, login and password (at least 4 characters)',
+  'Учётная запись заблокирована': 'The account is blocked',
+  'Файл не передан': 'No file was sent',
+  // OPDS-разделы каталога (сервер отдаёт русские названия)
+  'По категориям': 'By category',
+  'По классам': 'By grade',
+  'По предметам': 'By subject',
+  'Книга': 'Book',
+  'Литература': 'Literature',
+
+  // — Сетевой клиент (@reader/network) —
+  'Сервер не отвечает (истекло время ожидания)': 'The server is not responding (timed out)',
+  'Сервер недоступен. Проверьте, что он запущен, и подключение к сети.':
+    'The server is unreachable. Check that it is running and your network connection.',
+  'По этому адресу нет сервера читалки. Проверьте адрес.':
+    'No reader server at this address. Check the address.',
+  'Пустой адрес': 'Empty address',
+  'QR: нет адреса сервера': 'QR: no server address',
+  'OPDS: некорректный XML': 'OPDS: malformed XML',
+  'OPDS: ожидался Atom <feed>': 'OPDS: expected an Atom <feed>',
 };
