@@ -619,4 +619,9 @@ export const en: Record<string, string> = {
   'QR: нет адреса сервера': 'QR: no server address',
   'OPDS: некорректный XML': 'OPDS: malformed XML',
   'OPDS: ожидался Atom <feed>': 'OPDS: expected an Atom <feed>',
+
+  // — Масштаб PDF/CBZ —
+  'Уменьшить масштаб': 'Zoom out',
+  'Увеличить масштаб': 'Zoom in',
+  'Масштаб; нажмите, чтобы сбросить': 'Zoom; click to reset',
 };

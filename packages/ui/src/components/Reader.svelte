@@ -124,6 +124,13 @@
 
   // PDF → перетекаемый текст
   let converting = $state(false);
+
+  // Масштаб PDF/CBZ поверх вписывания (сброс — при открытии другой книги).
+  let zoomPct = $state(100);
+  function setZoomPct(pct: number) {
+    zoomPct = Math.min(300, Math.max(50, pct));
+    controller?.setZoomFactor(zoomPct / 100);
+  }
   let convProgress = $state<{ done: number; total: number } | null>(null);
   let convStatus = $state('');
 
@@ -504,6 +511,32 @@
     {/if}
 
     {#if $readerIsFixedLayout}
+      <button
+        class="text-btn"
+        onclick={() => setZoomPct(zoomPct - 25)}
+        disabled={zoomPct <= 50}
+        title={$t('Уменьшить масштаб')}
+        aria-label={$t('Уменьшить масштаб')}
+      >
+        −
+      </button>
+      <button
+        class="text-btn"
+        onclick={() => setZoomPct(100)}
+        title={$t('Масштаб; нажмите, чтобы сбросить')}
+        aria-label={$t('Масштаб; нажмите, чтобы сбросить')}
+      >
+        {zoomPct}%
+      </button>
+      <button
+        class="text-btn"
+        onclick={() => setZoomPct(zoomPct + 25)}
+        disabled={zoomPct >= 300}
+        title={$t('Увеличить масштаб')}
+        aria-label={$t('Увеличить масштаб')}
+      >
+        +
+      </button>
       <button class="text-btn" onclick={() => makeTextual('pdfjs')} disabled={converting} title={$t('Сделать текстовой (перетекаемый шрифт)')}>
         {converting ? $t('Конвертация…') : $t('В текст')}
       </button>
