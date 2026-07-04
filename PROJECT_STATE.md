@@ -555,3 +555,8 @@
   открывается как свой highlight без «Классу») — изоляция per-user между
   устройствами. Release APK пересобран с фиксами → dist. Грабли эмулятора
   дописаны в skill emulator-test.
+- **2026-07-04 (Windows): dist финализирован с фиксами.** Release APK
+  (aarch64+x86_64, подписан, allowBackup=0x0), desktop-инсталлятор и
+  `dist\server\web` пересобраны уже С полифиллом .at, selection-фиксом и
+  IndexedDB-фолбэком словаря; словарный пак лежит в
+  `dist\server\library\_dict\ru.json`. Эмулятор и тестовый сервер погашены.
