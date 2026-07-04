@@ -16,6 +16,7 @@
     connection,
     restoreSession,
   } from './store';
+  import { t, tr } from '../i18n';
 
   let mode = $state<'login' | 'register'>('login');
   let role = $state<'student' | 'teacher'>('student');
@@ -55,9 +56,9 @@
     connectError.set('');
     try {
       discovered = await invoke<DiscoveredServer[]>('discover_servers');
-      if (discovered.length === 0) connectError.set('Серверы в сети не найдены.');
+      if (discovered.length === 0) connectError.set(tr('Серверы в сети не найдены.'));
     } catch {
-      connectError.set('Поиск не удался.');
+      connectError.set(tr('Поиск не удался.'));
     } finally {
       discovering = false;
     }
@@ -67,7 +68,7 @@
   async function ensureConnected(): Promise<boolean> {
     if (connected) return true;
     if (!address.trim()) {
-      connectError.set('Введите адрес сервера школы.');
+      connectError.set(tr('Введите адрес сервера школы.'));
       return false;
     }
     // Код доступа (пэйринг-токен) вводом не запрашиваем: серверы со входом по
@@ -121,20 +122,20 @@
 <section class="auth">
   {#if connected}
     <p class="server-line">
-      Сервер: <strong>{$serverStatus?.name ?? 'подключён'}</strong>
-      <button class="link" onclick={disconnect}>сменить</button>
+      {$t('Сервер:')} <strong>{$serverStatus?.name ?? $t('подключён')}</strong>
+      <button class="link" onclick={disconnect}>{$t('сменить')}</button>
     </p>
   {:else}
     <div class="srv">
       <input
         type="text"
         bind:value={address}
-        placeholder="Адрес сервера школы, напр. 192.168.1.10:9700"
+        placeholder={$t('Адрес сервера школы, напр. 192.168.1.10:9700')}
       />
       <div class="srv-actions">
         {#if hasTauri}
           <button type="button" class="ghost" onclick={discover} disabled={discovering}>
-            {discovering ? 'Поиск…' : 'Найти сервер в сети'}
+            {discovering ? $t('Поиск…') : $t('Найти сервер в сети')}
           </button>
         {/if}
         {#if devMode}
@@ -148,7 +149,9 @@
           {#each discovered as srv (srv.baseUrl)}
             <li>
               <span class="d-name">{srv.name ?? srv.baseUrl}</span>
-              <button type="button" class="link" onclick={() => connect(srv.baseUrl)}>выбрать</button>
+              <button type="button" class="link" onclick={() => connect(srv.baseUrl)}
+                >{$t('выбрать')}</button
+              >
             </li>
           {/each}
         </ul>
@@ -157,28 +160,30 @@
   {/if}
 
   <div class="tabs">
-    <button class:active={mode === 'login'} onclick={() => (mode = 'login')}>Вход</button>
-    <button class:active={mode === 'register'} onclick={() => (mode = 'register')}>Регистрация</button>
+    <button class:active={mode === 'login'} onclick={() => (mode = 'login')}>{$t('Вход')}</button>
+    <button class:active={mode === 'register'} onclick={() => (mode = 'register')}
+      >{$t('Регистрация')}</button
+    >
   </div>
 
   {#if mode === 'register'}
     <div class="roles">
       <label class:sel={role === 'student'}>
-        <input type="radio" name="role" value="student" bind:group={role} /> Ученик
+        <input type="radio" name="role" value="student" bind:group={role} /> {$t('Ученик')}
       </label>
       <label class:sel={role === 'teacher'}>
-        <input type="radio" name="role" value="teacher" bind:group={role} /> Учитель
+        <input type="radio" name="role" value="teacher" bind:group={role} /> {$t('Учитель')}
       </label>
     </div>
 
     <label class="fld">
-      Имя, фамилия, отчество
-      <input type="text" bind:value={fullName} placeholder="Фамилия Имя Отчество" />
+      {$t('Имя, фамилия, отчество')}
+      <input type="text" bind:value={fullName} placeholder={$t('Фамилия Имя Отчество')} />
     </label>
   {/if}
 
   <label class="fld">
-    Логин
+    {$t('Логин')}
     <!-- Логин чувствителен к регистру; мобильная клавиатура капитализирует
          первую букву («S7» вместо «s7») и вход не проходит — глушим. -->
     <input
@@ -188,11 +193,11 @@
       autocapitalize="none"
       autocorrect="off"
       spellcheck="false"
-      placeholder="например: u7a"
+      placeholder={$t('например: u7a')}
     />
   </label>
   <label class="fld">
-    Пароль
+    {$t('Пароль')}
     <input
       type="password"
       bind:value={password}
@@ -203,9 +208,9 @@
 
   {#if mode === 'register' && role === 'student'}
     <label class="fld">
-      Класс
+      {$t('Класс')}
       <select bind:value={klass}>
-        <option value="" disabled>Выберите класс</option>
+        <option value="" disabled>{$t('Выберите класс')}</option>
         {#each classes as c (c.id)}
           <option value={c.id}>{c.label}</option>
         {/each}
@@ -215,7 +220,7 @@
 
   {#if mode === 'register' && role === 'teacher'}
     <fieldset>
-      <legend>Предметы</legend>
+      <legend>{$t('Предметы')}</legend>
       <div class="chips">
         {#each subjects as s (s.id)}
           <button
@@ -230,7 +235,7 @@
       </div>
     </fieldset>
     <fieldset>
-      <legend>Классы</legend>
+      <legend>{$t('Классы')}</legend>
       <div class="chips">
         {#each classes as c (c.id)}
           <button
@@ -252,7 +257,7 @@
       <!-- Сервер был недоступен в момент открытия страницы (например,
            перезапускался) — повторная попытка без повторного ввода адреса. -->
       <button type="button" class="ghost retry" onclick={restoreSession} disabled={$connecting}>
-        {$connecting ? 'Подключение…' : 'Повторить подключение'}
+        {$connecting ? $t('Подключение…') : $t('Повторить подключение')}
       </button>
     {/if}
   {/if}
@@ -260,17 +265,17 @@
 
   <button class="primary" onclick={submit} disabled={$authBusy || $connecting}>
     {$connecting
-      ? 'Подключение…'
+      ? $t('Подключение…')
       : $authBusy
-        ? 'Подождите…'
+        ? $t('Подождите…')
         : mode === 'login'
-          ? 'Войти'
-          : 'Зарегистрироваться'}
+          ? $t('Войти')
+          : $t('Зарегистрироваться')}
   </button>
 
   {#if mode === 'register'}
     <p class="note">
-      После регистрации учитель должен одобрить вашу заявку. До одобрения доступ ограничен.
+      {$t('После регистрации учитель должен одобрить вашу заявку. До одобрения доступ ограничен.')}
     </p>
   {/if}
 </section>

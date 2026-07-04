@@ -11,6 +11,7 @@
     downloadBackup,
   } from './admin';
   import UsersPanel from './UsersPanel.svelte';
+  import { t, locale } from '../i18n';
 
   const ACTION_LABEL: Record<string, string> = {
     register: 'регистрация',
@@ -28,7 +29,7 @@
   onMount(loadAudit);
 
   function fmt(ts: number): string {
-    return new Date(ts).toLocaleString('ru-RU');
+    return new Date(ts).toLocaleString($locale === 'en' ? 'en-GB' : 'ru-RU');
   }
 </script>
 
@@ -37,25 +38,25 @@
 
 <section class="admin">
   <div class="bar">
-    <h2>Журнал действий</h2>
-    <button class="ghost sm" onclick={loadAudit} disabled={$adminBusy}>Обновить</button>
+    <h2>{$t('Журнал действий')}</h2>
+    <button class="ghost sm" onclick={loadAudit} disabled={$adminBusy}>{$t('Обновить')}</button>
     {#if canBackup($session?.user.role)}
       <button class="primary sm" onclick={downloadBackup} disabled={$adminBusy}>
-        Скачать резервную копию
+        {$t('Скачать резервную копию')}
       </button>
     {/if}
   </div>
   {#if $adminError}<p class="error">{$adminError}</p>{/if}
 
   {#if $auditEntries.length === 0}
-    <p class="muted">Записей пока нет.</p>
+    <p class="muted">{$t('Записей пока нет.')}</p>
   {:else}
     <ul>
       {#each $auditEntries as e (e.ts + e.actor + e.action)}
         <li>
           <span class="ts">{fmt(e.ts)}</span>
           <span class="actor">{e.actor}</span>
-          <span class="action">{ACTION_LABEL[e.action] ?? e.action}</span>
+          <span class="action">{$t(ACTION_LABEL[e.action] ?? e.action)}</span>
           {#if e.detail}<span class="detail">{e.detail}</span>{/if}
         </li>
       {/each}

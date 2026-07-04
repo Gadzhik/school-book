@@ -1,14 +1,15 @@
 <script lang="ts">
   import { capturePages, importFiles, scannerBusy, autoCrop, cropMarginPct } from './store';
   import Icon from '../components/Icon.svelte';
+  import { t } from '../i18n';
 
   let input: HTMLInputElement;
   let dragging = $state(false);
 
   async function onPick(e: Event) {
-    const t = e.target as HTMLInputElement;
-    if (t.files?.length) await importFiles(Array.from(t.files));
-    t.value = '';
+    const inp = e.target as HTMLInputElement;
+    if (inp.files?.length) await importFiles(Array.from(inp.files));
+    inp.value = '';
   }
 
   async function onDrop(e: DragEvent) {
@@ -22,7 +23,7 @@
   class="capture"
   class:dragging
   role="group"
-  aria-label="Добавление страниц"
+  aria-label={$t('Добавление страниц')}
   ondragover={(e) => {
     e.preventDefault();
     dragging = true;
@@ -32,19 +33,19 @@
 >
   <button class="big" disabled={$scannerBusy} onclick={() => capturePages()}>
     <Icon name="plus" size={28} />
-    <span>Снять камерой</span>
+    <span>{$t('Снять камерой')}</span>
   </button>
   <button class="big secondary" disabled={$scannerBusy} onclick={() => input.click()}>
     <Icon name="book" size={28} />
-    <span>Загрузить фото</span>
+    <span>{$t('Загрузить фото')}</span>
   </button>
   <label class="opt">
     <input type="checkbox" bind:checked={$autoCrop} disabled={$scannerBusy} />
-    <span>Авто-обрезка по краям листа</span>
+    <span>{$t('Авто-обрезка по краям листа')}</span>
   </label>
   {#if $autoCrop}
     <label class="opt margin">
-      <span>Запас по краям: {$cropMarginPct}%</span>
+      <span>{$t('Запас по краям: {0}%', $cropMarginPct)}</span>
       <input
         type="range"
         min="0"
@@ -52,15 +53,17 @@
         step="1"
         bind:value={$cropMarginPct}
         disabled={$scannerBusy}
-        aria-label="Запас по краям при обрезке, процентов"
+        aria-label={$t('Запас по краям при обрезке, процентов')}
       />
-      <span class="opt-hint">0 — резать ровно по краям; больше — бережнее (меньше риск отрезать текст)</span>
+      <span class="opt-hint"
+        >{$t('0 — резать ровно по краям; больше — бережнее (меньше риск отрезать текст)')}</span
+      >
     </label>
   {/if}
   {#if $scannerBusy}
-    <p class="hint busy">Обработка фото… (первый раз — загрузка авто-обрезки, это пару секунд)</p>
+    <p class="hint busy">{$t('Обработка фото… (первый раз — загрузка авто-обрезки, это пару секунд)')}</p>
   {:else}
-    <p class="hint">Снимайте страницы по одной или перетащите готовые фото сюда</p>
+    <p class="hint">{$t('Снимайте страницы по одной или перетащите готовые фото сюда')}</p>
   {/if}
   <input
     bind:this={input}

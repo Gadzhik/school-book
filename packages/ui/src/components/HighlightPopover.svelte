@@ -1,6 +1,7 @@
 <script lang="ts">
   /** Просмотр/редактирование выделения (ТЗ Часть 6, E3): заметка + удаление. */
   import type { Highlight } from '@reader/core';
+  import { t } from '../i18n';
   import Icon from './Icon.svelte';
 
   interface Props {
@@ -19,26 +20,26 @@
 </script>
 
 <div class="backdrop" role="presentation" onclick={onclose}></div>
-<div class="pop" role="dialog" aria-label="Выделение">
+<div class="pop" role="dialog" aria-label={$t('Выделение')}>
   <header>
     <span class="frag" title={highlight.text}>
       «{highlight.text.length > 80 ? highlight.text.slice(0, 80) + '…' : highlight.text}»
     </span>
-    <button class="icon-btn" onclick={onclose} aria-label="Закрыть"><Icon name="close" size={18} /></button>
+    <button class="icon-btn" onclick={onclose} aria-label={$t('Закрыть')}><Icon name="close" size={18} /></button>
   </header>
 
   <textarea
     bind:value={note}
     rows="3"
-    placeholder="Заметка (необязательно)"
-    aria-label="Заметка к выделению"
+    placeholder={$t('Заметка (необязательно)')}
+    aria-label={$t('Заметка к выделению')}
   ></textarea>
 
   <div class="actions">
     <button class="del" onclick={onremove}>
-      <Icon name="trash" size={18} /> Удалить
+      <Icon name="trash" size={18} /> {$t('Удалить')}
     </button>
-    <button class="save" onclick={() => onsave(note.trim())}>Сохранить</button>
+    <button class="save" onclick={() => onsave(note.trim())}>{$t('Сохранить')}</button>
   </div>
 </div>
 

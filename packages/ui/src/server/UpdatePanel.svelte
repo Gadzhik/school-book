@@ -11,6 +11,7 @@
    *    через плагин opener, иначе window.open) и ставим вручную.
    */
   import { updateInfo, appVersion, currentClient, checkUpdate } from './store';
+  import { t } from '../i18n';
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const tauri = typeof window !== 'undefined' ? (window as any).__TAURI__ : undefined;
@@ -73,7 +74,7 @@
 {#if $updateInfo}
   <section class="update">
     <div class="u-head">
-      <span class="u-title">Доступно обновление</span>
+      <span class="u-title">{$t('Доступно обновление')}</span>
       <span class="u-ver">{appVersion()} → {$updateInfo.version}</span>
     </div>
     {#if $updateInfo.notes}
@@ -82,21 +83,20 @@
 
     {#if plat === 'web'}
       <p class="u-hint">
-        Приложение раздаёт сам сервер — достаточно перезагрузить страницу.
+        {$t('Приложение раздаёт сам сервер — достаточно перезагрузить страницу.')}
       </p>
       <button class="primary sm" onclick={reloadApp} disabled={busy}>
-        {busy ? 'Обновление…' : 'Обновить приложение'}
+        {busy ? $t('Обновление…') : $t('Обновить приложение')}
       </button>
     {:else if myFile}
       <p class="u-hint">
-        Скачайте новую версию и установите поверх текущей. Данные (книги,
-        прогресс, слова) сохранятся.
+        {$t('Скачайте новую версию и установите поверх текущей. Данные (книги, прогресс, слова) сохранятся.')}
       </p>
       <button class="primary sm" onclick={() => download(myFile)}>
-        Скачать для {PLATFORM_LABEL[plat] ?? plat}
+        {$t('Скачать для {0}', PLATFORM_LABEL[plat] ?? plat)}
       </button>
     {:else if allFiles.length}
-      <p class="u-hint">Для этой платформы файла нет; доступные сборки:</p>
+      <p class="u-hint">{$t('Для этой платформы файла нет; доступные сборки:')}</p>
       <div class="u-files">
         {#each allFiles as [p, f] (p)}
           <button class="ghost sm" onclick={() => download(f)}>
@@ -105,11 +105,11 @@
         {/each}
       </div>
     {:else}
-      <p class="u-hint">Файлы обновления ещё не выложены на сервер.</p>
+      <p class="u-hint">{$t('Файлы обновления ещё не выложены на сервер.')}</p>
     {/if}
 
     <button class="ghost sm u-recheck" onclick={() => void checkUpdate()}>
-      Проверить ещё раз
+      {$t('Проверить ещё раз')}
     </button>
   </section>
 {/if}

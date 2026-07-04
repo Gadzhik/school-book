@@ -1,6 +1,7 @@
 <script lang="ts">
   /** Панель закладок и заметок книги (ТЗ Часть 6, п.6.3/E3). */
   import type { Bookmark, Highlight } from '@reader/core';
+  import { t } from '../i18n';
   import Icon from './Icon.svelte';
 
   interface Props {
@@ -25,17 +26,17 @@
   }: Props = $props();
 </script>
 
-<nav class="panel" aria-label="Закладки и заметки">
+<nav class="panel" aria-label={$t('Закладки и заметки')}>
   <header>
-    <h2>Закладки и заметки</h2>
-    <button class="icon-btn" onclick={onclose} aria-label="Закрыть">
+    <h2>{$t('Закладки и заметки')}</h2>
+    <button class="icon-btn" onclick={onclose} aria-label={$t('Закрыть')}>
       <Icon name="close" />
     </button>
   </header>
 
-  <h3>Закладки</h3>
+  <h3>{$t('Закладки')}</h3>
   {#if bookmarks.length === 0}
-    <p class="muted">Закладок пока нет. Нажмите флажок в панели сверху, чтобы добавить.</p>
+    <p class="muted">{$t('Закладок пока нет. Нажмите флажок в панели сверху, чтобы добавить.')}</p>
   {:else}
     <ul>
       {#each bookmarks as b (b.id)}
@@ -43,11 +44,11 @@
           <button class="go" onclick={() => ongoto(b.locator)}>
             <span class="pct">{Math.round((b.fraction ?? 0) * 100)}%</span>
             <span class="text">
-              <span class="label">{b.label || 'Закладка'}</span>
+              <span class="label">{b.label || $t('Закладка')}</span>
               {#if b.excerpt}<span class="excerpt">{b.excerpt}</span>{/if}
             </span>
           </button>
-          <button class="icon-btn del" onclick={() => onremove(b.id)} aria-label="Удалить закладку">
+          <button class="icon-btn del" onclick={() => onremove(b.id)} aria-label={$t('Удалить закладку')}>
             <Icon name="trash" size={18} />
           </button>
         </li>
@@ -55,9 +56,9 @@
     </ul>
   {/if}
 
-  <h3>Выделения</h3>
+  <h3>{$t('Выделения')}</h3>
   {#if highlights.length === 0}
-    <p class="muted">Выделите текст в книге и нажмите «Выделить».</p>
+    <p class="muted">{$t('Выделите текст в книге и нажмите «Выделить».')}</p>
   {:else}
     <ul>
       {#each highlights as h (h.id)}
@@ -72,7 +73,7 @@
           <button
             class="icon-btn"
             onclick={() => onopenHighlight?.(h.id)}
-            aria-label="Заметка/удалить выделение"
+            aria-label={$t('Заметка/удалить выделение')}
           >
             <Icon name="settings" size={18} />
           </button>

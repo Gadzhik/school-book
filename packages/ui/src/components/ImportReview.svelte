@@ -7,6 +7,7 @@
    */
   import { importReview, dismissReview, clearReview, type ImportReviewItem } from '../stores';
   import { classes, subjects, categories, tagBook } from '../classification';
+  import { t } from '../i18n';
   import Icon from './Icon.svelte';
 
   interface Props {
@@ -20,11 +21,13 @@
   const subjectLabel = $derived(new Map($subjects.map((s) => [s.id, s.name])));
   const categoryLabel = $derived(new Map($categories.map((c) => [c.id, c.name])));
 
-  function chips(item: ImportReviewItem): string[] {
+  // Переводчик передаётся из разметки ($t) — подписи реактивны к смене языка.
+  type Translate = (s: string, ...args: unknown[]) => string;
+  function chips(item: ImportReviewItem, tt: Translate): string[] {
     return [
-      ...item.classes.map((id) => `${classLabel.get(id) ?? id} кл.`),
-      ...item.subjects.map((id) => subjectLabel.get(id) ?? id),
-      ...item.categories.map((id) => categoryLabel.get(id) ?? id),
+      ...item.classes.map((id) => tt('{0} кл.', classLabel.get(id) ?? id)),
+      ...item.subjects.map((id) => tt(subjectLabel.get(id) ?? id)),
+      ...item.categories.map((id) => tt(categoryLabel.get(id) ?? id)),
     ];
   }
 
@@ -36,25 +39,25 @@
 </script>
 
 {#if $importReview.length}
-  <div class="review" role="region" aria-label="Авторазметка новых книг">
+  <div class="review" role="region" aria-label={$t('Авторазметка новых книг')}>
     <div class="head">
       <Icon name="book" size={18} />
-      <strong>Предложены теги для новых книг</strong>
-      <button class="link" onclick={clearReview}>Принять все</button>
+      <strong>{$t('Предложены теги для новых книг')}</strong>
+      <button class="link" onclick={clearReview}>{$t('Принять все')}</button>
     </div>
     <ul>
       {#each $importReview as item (item.bookId)}
         <li>
           <span class="title" title={item.title}>{item.title}</span>
           <span class="chips">
-            {#each chips(item) as label}
+            {#each chips(item, $t) as label}
               <span class="chip">{label}</span>
             {/each}
           </span>
           <span class="actions">
-            <button class="link" onclick={() => onedit(item.bookId)}>Изменить</button>
-            <button class="link" onclick={() => reset(item)}>Сбросить</button>
-            <button class="link ok" onclick={() => dismissReview(item.bookId)}>Ок</button>
+            <button class="link" onclick={() => onedit(item.bookId)}>{$t('Изменить')}</button>
+            <button class="link" onclick={() => reset(item)}>{$t('Сбросить')}</button>
+            <button class="link ok" onclick={() => dismissReview(item.bookId)}>{$t('Ок')}</button>
           </span>
         </li>
       {/each}

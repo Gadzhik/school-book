@@ -1,24 +1,25 @@
 <script lang="ts">
   /** Предупреждение о бета-ИИ. Показывается один раз перед первым использованием. */
   import { llmDisclaimerOpen, acceptLlm, declineLlm, disableLlm } from './llm-consent';
+  import { t } from '../i18n';
 </script>
 
 {#if $llmDisclaimerOpen}
   <div class="backdrop" role="presentation" onclick={declineLlm}></div>
-  <div class="modal" role="dialog" aria-modal="true" aria-label="ИИ в тестировании">
-    <h2>🤖 ИИ-помощник <span class="beta">бета</span></h2>
+  <div class="modal" role="dialog" aria-modal="true" aria-label={$t('ИИ в тестировании')}>
+    <h2>🤖 {$t('ИИ-помощник')} <span class="beta">{$t('бета')}</span></h2>
     <p>
-      ИИ-функции (объяснение, краткое содержание, квиз, улучшение распознанного
-      текста) работают через локальную модель и находятся <strong>в тестировании</strong>.
+      {$t('ИИ-функции (объяснение, краткое содержание, квиз, улучшение распознанного текста) работают через локальную модель и находятся')}
+      <strong>{$t('в тестировании')}</strong>.
     </p>
     <ul>
-      <li>Ответы могут быть <strong>неточными или выдуманными</strong>.</li>
-      <li>Не используйте их для оценок и важных решений — проверяйте сами.</li>
-      <li>На слабом сервере ответы бывают медленными.</li>
+      <li>{$t('Ответы могут быть')} <strong>{$t('неточными или выдуманными')}</strong>.</li>
+      <li>{$t('Не используйте их для оценок и важных решений — проверяйте сами.')}</li>
+      <li>{$t('На слабом сервере ответы бывают медленными.')}</li>
     </ul>
     <div class="actions">
-      <button class="ghost" onclick={disableLlm}>Отключить ИИ</button>
-      <button class="primary" onclick={acceptLlm}>Понятно, продолжить</button>
+      <button class="ghost" onclick={disableLlm}>{$t('Отключить ИИ')}</button>
+      <button class="primary" onclick={acceptLlm}>{$t('Понятно, продолжить')}</button>
     </div>
   </div>
 {/if}

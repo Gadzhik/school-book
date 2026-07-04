@@ -7,6 +7,7 @@
     ColumnCount,
   } from '@reader/core';
   import { settings, patchSettings, readerIsFixedLayout } from '../stores';
+  import { t, locale, setLocale } from '../i18n';
   import Icon from './Icon.svelte';
 
   interface Props {
@@ -14,6 +15,7 @@
   }
   const { onclose }: Props = $props();
 
+  // Метки — русские ключи словаря, переводятся при выводе через $t.
   const themes: { value: ThemeName; label: string }[] = [
     { value: 'light', label: 'Светлая' },
     { value: 'dark', label: 'Тёмная' },
@@ -39,40 +41,51 @@
   ];
 </script>
 
-<aside class="panel" aria-label="Настройки чтения">
+<aside class="panel" aria-label={$t('Настройки чтения')}>
   <header>
-    <h2>Настройки чтения</h2>
-    <button class="icon-btn" onclick={onclose} aria-label="Закрыть настройки">
+    <h2>{$t('Настройки чтения')}</h2>
+    <button class="icon-btn" onclick={onclose} aria-label={$t('Закрыть настройки')}>
       <Icon name="close" />
     </button>
   </header>
 
   {#if $readerIsFixedLayout}
     <p class="note">
-      Это PDF с фиксированной вёрсткой. Текст в нём не перетекает, поэтому
-      настройки шрифта, интервала, полей и колонок могут не действовать —
-      надёжно работают только тема и масштаб (через «Размер шрифта» при 1/2
-      колонках). Полная настройка появится после распознавания текста (OCR).
+      {$t(
+        'Это PDF с фиксированной вёрсткой. Текст в нём не перетекает, поэтому настройки шрифта, интервала, полей и колонок могут не действовать — надёжно работают только тема и масштаб (через «Размер шрифта» при 1/2 колонках). Полная настройка появится после распознавания текста (OCR).',
+      )}
     </p>
   {/if}
 
   <section>
-    <h3>Тема</h3>
+    <h3>{$t('Язык интерфейса')}</h3>
     <div class="chips">
-      {#each themes as t}
+      <button class="chip" class:active={$locale === 'ru'} onclick={() => setLocale('ru')}>
+        Русский
+      </button>
+      <button class="chip" class:active={$locale === 'en'} onclick={() => setLocale('en')}>
+        English
+      </button>
+    </div>
+  </section>
+
+  <section>
+    <h3>{$t('Тема')}</h3>
+    <div class="chips">
+      {#each themes as th}
         <button
           class="chip"
-          class:active={$settings.theme === t.value}
-          onclick={() => patchSettings({ theme: t.value })}
+          class:active={$settings.theme === th.value}
+          onclick={() => patchSettings({ theme: th.value })}
         >
-          {t.label}
+          {$t(th.label)}
         </button>
       {/each}
     </div>
   </section>
 
   <section>
-    <h3>Шрифт</h3>
+    <h3>{$t('Шрифт')}</h3>
     <div class="chips">
       {#each fonts as f}
         <button
@@ -80,14 +93,14 @@
           class:active={$settings.fontFamily === f.value}
           onclick={() => patchSettings({ fontFamily: f.value })}
         >
-          {f.label}
+          {$t(f.label)}
         </button>
       {/each}
     </div>
   </section>
 
   <section>
-    <h3>Размер шрифта: {$settings.fontSize}%</h3>
+    <h3>{$t('Размер шрифта')}: {$settings.fontSize}%</h3>
     <input
       type="range"
       min="70"
@@ -99,7 +112,7 @@
   </section>
 
   <section>
-    <h3>Межстрочный интервал: {$settings.lineHeight}</h3>
+    <h3>{$t('Межстрочный интервал')}: {$settings.lineHeight}</h3>
     <input
       type="range"
       min="1"
@@ -111,7 +124,7 @@
   </section>
 
   <section>
-    <h3>Поля: {$settings.margin}%</h3>
+    <h3>{$t('Поля')}: {$settings.margin}%</h3>
     <input
       type="range"
       min="0"
@@ -123,7 +136,7 @@
   </section>
 
   <section>
-    <h3>Выравнивание</h3>
+    <h3>{$t('Выравнивание')}</h3>
     <div class="chips">
       {#each aligns as a}
         <button
@@ -131,14 +144,14 @@
           class:active={$settings.textAlign === a.value}
           onclick={() => patchSettings({ textAlign: a.value })}
         >
-          {a.label}
+          {$t(a.label)}
         </button>
       {/each}
     </div>
   </section>
 
   <section>
-    <h3>Режим чтения</h3>
+    <h3>{$t('Режим чтения')}</h3>
     <div class="chips">
       {#each flows as f}
         <button
@@ -146,7 +159,7 @@
           class:active={$settings.flow === f.value}
           onclick={() => patchSettings({ flow: f.value })}
         >
-          {f.label}
+          {$t(f.label)}
         </button>
       {/each}
     </div>
@@ -154,7 +167,7 @@
 
   {#if $settings.flow === 'paginated'}
     <section>
-      <h3>Колонки</h3>
+      <h3>{$t('Колонки')}</h3>
       <div class="chips">
         {#each columnOpts as c}
           <button
@@ -162,7 +175,7 @@
             class:active={$settings.columns === c.value}
             onclick={() => patchSettings({ columns: c.value })}
           >
-            {c.label}
+            {$t(c.label)}
           </button>
         {/each}
       </div>
@@ -170,90 +183,91 @@
   {/if}
 
   <section>
-    <h3>Линейка чтения</h3>
+    <h3>{$t('Линейка чтения')}</h3>
     <div class="chips">
       <button
         class="chip"
         class:active={!$settings.readingRuler}
         onclick={() => patchSettings({ readingRuler: false })}
       >
-        Выкл
+        {$t('Выкл')}
       </button>
       <button
         class="chip"
         class:active={$settings.readingRuler}
         onclick={() => patchSettings({ readingRuler: true })}
       >
-        Вкл
+        {$t('Вкл')}
       </button>
     </div>
   </section>
 
   <section>
-    <h3>Серия чтения</h3>
+    <h3>{$t('Серия чтения')}</h3>
     <div class="chips">
       <button
         class="chip"
         class:active={!$settings.gamification}
         onclick={() => patchSettings({ gamification: false })}
       >
-        Выкл
+        {$t('Выкл')}
       </button>
       <button
         class="chip"
         class:active={$settings.gamification}
         onclick={() => patchSettings({ gamification: true })}
       >
-        Вкл
+        {$t('Вкл')}
       </button>
     </div>
   </section>
 
   <section>
-    <h3>Режим e-ink</h3>
+    <h3>{$t('Режим e-ink')}</h3>
     <div class="chips">
       <button
         class="chip"
         class:active={!$settings.eink}
         onclick={() => patchSettings({ eink: false })}
       >
-        Выкл
+        {$t('Выкл')}
       </button>
       <button
         class="chip"
         class:active={$settings.eink}
         onclick={() => patchSettings({ eink: true })}
       >
-        Вкл
+        {$t('Вкл')}
       </button>
     </div>
   </section>
 
   <section>
-    <h3>Формулы (KaTeX)</h3>
+    <h3>{$t('Формулы (KaTeX)')}</h3>
     <div class="chips">
       <button class="chip" class:active={!$settings.math} onclick={() => patchSettings({ math: false })}>
-        Выкл
+        {$t('Выкл')}
       </button>
       <button class="chip" class:active={$settings.math} onclick={() => patchSettings({ math: true })}>
-        Вкл
+        {$t('Вкл')}
       </button>
     </div>
   </section>
 
   <section>
-    <h3>ИИ-помощник <span class="beta">бета</span></h3>
+    <h3>{$t('ИИ-помощник')} <span class="beta">{$t('бета')}</span></h3>
     <label class="toggle">
       <input
         type="checkbox"
         checked={$settings.llmEnabled}
         onchange={(e) => patchSettings({ llmEnabled: e.currentTarget.checked })}
       />
-      <span>Включить ИИ-функции</span>
+      <span>{$t('Включить ИИ-функции')}</span>
     </label>
     <p class="hint">
-      Работают через локальную модель, в тестировании. Ответы могут быть неточными —
-      не для оценок и важных решений.
+      {$t(
+        'Работают через локальную модель, в тестировании. Ответы могут быть неточными — не для оценок и важных решений.',
+      )}
     </p>
     {#if $settings.llmEnabled}
     <div class="chips">
@@ -276,8 +290,8 @@
       class="field"
       type="text"
       placeholder={$settings.llmProvider === 'lmstudio'
-        ? 'URL (по умолчанию http://localhost:1234)'
-        : 'URL (по умолчанию http://localhost:11434)'}
+        ? $t('URL (по умолчанию http://localhost:1234)')
+        : $t('URL (по умолчанию http://localhost:11434)')}
       value={$settings.llmUrl}
       oninput={(e) => patchSettings({ llmUrl: e.currentTarget.value.trim() })}
     />
@@ -285,51 +299,52 @@
       class="field"
       type="text"
       placeholder={$settings.llmProvider === 'lmstudio'
-        ? 'Модель (пусто — первая загруженная)'
-        : 'Модель (по умолчанию llama3.2)'}
+        ? $t('Модель (пусто — первая загруженная)')
+        : $t('Модель (по умолчанию llama3.2)')}
       value={$settings.llmModel}
       oninput={(e) => patchSettings({ llmModel: e.currentTarget.value.trim() })}
     />
     <p class="hint">
-      Для веб-клиента включите CORS: Ollama — <code>OLLAMA_ORIGINS=*</code>; LM Studio — Developer →
-      Enable CORS.
+      {$t('Для веб-клиента включите CORS: Ollama —')}
+      <code>OLLAMA_ORIGINS=*</code>{$t('; LM Studio — Developer → Enable CORS.')}
     </p>
     {/if}
   </section>
 
   <section>
-    <h3>Озвучивание</h3>
+    <h3>{$t('Озвучивание')}</h3>
     <div class="chips">
       <button
         class="chip"
         class:active={!$settings.nativeTts}
         onclick={() => patchSettings({ nativeTts: false })}
       >
-        Браузер
+        {$t('Браузер')}
       </button>
       <button
         class="chip"
         class:active={$settings.nativeTts}
         onclick={() => patchSettings({ nativeTts: true })}
       >
-        Системный
+        {$t('Системный')}
       </button>
     </div>
     <p class="hint">
-      Системный голос (в приложении) — лучше на телефоне, где у браузера нет
-      голосов. Без подсветки слова. В вебе всегда озвучивает браузер.
+      {$t(
+        'Системный голос (в приложении) — лучше на телефоне, где у браузера нет голосов. Без подсветки слова. В вебе всегда озвучивает браузер.',
+      )}
     </p>
   </section>
 
   <section>
-    <h3>Конвертер документов</h3>
+    <h3>{$t('Конвертер документов')}</h3>
     <div class="chips">
       <button
         class="chip"
         class:active={!$settings.pandocDocs}
         onclick={() => patchSettings({ pandocDocs: false })}
       >
-        Встроенный
+        {$t('Встроенный')}
       </button>
       <button
         class="chip"
@@ -340,8 +355,9 @@
       </button>
     </div>
     <p class="hint">
-      pandoc (DOCX/RTF/ODT/HTML/MD→EPUB) точнее, но тяжёлый: ~58 МБ загрузятся при
-      первом использовании. Встроенный — быстрый и лёгкий.
+      {$t(
+        'pandoc (DOCX/RTF/ODT/HTML/MD→EPUB) точнее, но тяжёлый: ~58 МБ загрузятся при первом использовании. Встроенный — быстрый и лёгкий.',
+      )}
     </p>
   </section>
 </aside>

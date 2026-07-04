@@ -21,12 +21,13 @@
     markProgress,
     loadReport,
   } from './assignments';
+  import { t, locale } from '../i18n';
 
   const role = $derived($session?.user.role);
   const teacher = $derived(canAssign(role));
 
   let classes = $state<ClassEntry[]>([]);
-  const classLabel = (id: string) => classes.find((c) => c.id === id)?.label ?? `класс ${id}`;
+  const classLabel = (id: string) => classes.find((c) => c.id === id)?.label ?? $t('класс {0}', id);
   // Учителю — только свои классы для создания задания.
   const myClasses = $derived(
     role === 'teacher' ? classes.filter((c) => ($session?.user.classes ?? []).includes(c.id)) : classes,
@@ -70,44 +71,45 @@
     if (openReport[id] && !$reports[id]) await loadReport(id);
   }
 
-  function fmtDue(ms?: number): string {
-    if (!ms) return '';
-    return `до ${new Date(ms).toLocaleDateString('ru-RU')}`;
+  function fmtDue(ms: number): string {
+    return $t('до {0}', new Date(ms).toLocaleDateString($locale === 'en' ? 'en-GB' : 'ru-RU'));
   }
 </script>
 
 <section class="asg">
   <div class="bar">
-    <h2>Задания</h2>
-    <button class="ghost sm" onclick={loadAssignments} disabled={$assignmentsBusy}>Обновить</button>
+    <h2>{$t('Задания')}</h2>
+    <button class="ghost sm" onclick={loadAssignments} disabled={$assignmentsBusy}
+      >{$t('Обновить')}</button
+    >
   </div>
   {#if $assignmentsError}<p class="error">{$assignmentsError}</p>{/if}
 
   {#if teacher}
     <div class="create">
-      <h3>Новое задание</h3>
+      <h3>{$t('Новое задание')}</h3>
       <select bind:value={bookId}>
-        <option value="" disabled>Книга…</option>
+        <option value="" disabled>{$t('Книга…')}</option>
         {#each $bookChoices as b (b.id)}
           <option value={b.id}>{b.title}</option>
         {/each}
       </select>
       <select bind:value={classId}>
-        <option value="" disabled>Класс…</option>
+        <option value="" disabled>{$t('Класс…')}</option>
         {#each myClasses as c (c.id)}
           <option value={c.id}>{c.label}</option>
         {/each}
       </select>
-      <input type="text" bind:value={title} placeholder="Название (необязательно)" />
-      <input type="date" bind:value={due} title="Срок (необязательно)" />
+      <input type="text" bind:value={title} placeholder={$t('Название (необязательно)')} />
+      <input type="date" bind:value={due} title={$t('Срок (необязательно)')} />
       <button class="primary sm" onclick={submit} disabled={!bookId || !classId || $assignmentsBusy}>
-        Назначить
+        {$t('Назначить')}
       </button>
     </div>
   {/if}
 
   {#if $assignments.length === 0}
-    <p class="muted">Заданий пока нет.</p>
+    <p class="muted">{$t('Заданий пока нет.')}</p>
   {:else}
     <ul>
       {#each $assignments as a (a.id)}
@@ -119,35 +121,37 @@
             <span class="spacer"></span>
 
             {#if isStudentView(a)}
-              <span class="status s-{a.status}">{STATUS_LABEL[a.status] ?? a.status}</span>
+              <span class="status s-{a.status}">{$t(STATUS_LABEL[a.status] ?? a.status)}</span>
               {#if a.status !== 'done'}
                 <button class="primary sm" onclick={() => markProgress(a.id, 'done')}>
-                  Отметить прочитанным
+                  {$t('Отметить прочитанным')}
                 </button>
               {/if}
             {:else if teacher}
               <button class="ghost sm" onclick={() => toggleReport(a.id)}>
-                {openReport[a.id] ? 'Скрыть отчёт' : 'Отчёт'}
+                {openReport[a.id] ? $t('Скрыть отчёт') : $t('Отчёт')}
               </button>
-              <button class="ghost sm danger" onclick={() => deleteAssignment(a.id)}>Удалить</button>
+              <button class="ghost sm danger" onclick={() => deleteAssignment(a.id)}
+                >{$t('Удалить')}</button
+              >
             {/if}
           </div>
 
           {#if teacher && openReport[a.id]}
             <div class="report">
               {#if !$reports[a.id]}
-                <p class="muted">Загрузка…</p>
+                <p class="muted">{$t('Загрузка…')}</p>
               {:else if $reports[a.id].length === 0}
-                <p class="muted">В классе нет учеников.</p>
+                <p class="muted">{$t('В классе нет учеников.')}</p>
               {:else}
                 {@const rows = $reports[a.id]}
                 {@const done = rows.filter((r) => r.status === 'done').length}
-                <p class="muted">Прочитали: {done} из {rows.length}</p>
+                <p class="muted">{$t('Прочитали: {0} из {1}', done, rows.length)}</p>
                 <ul class="rep">
                   {#each rows as r (r.userId)}
                     <li>
                       <span>{r.fullName}</span>
-                      <span class="status s-{r.status}">{STATUS_LABEL[r.status] ?? r.status}</span>
+                      <span class="status s-{r.status}">{$t(STATUS_LABEL[r.status] ?? r.status)}</span>
                     </li>
                   {/each}
                 </ul>

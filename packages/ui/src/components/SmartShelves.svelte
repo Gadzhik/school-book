@@ -1,14 +1,15 @@
 <script lang="ts">
   import { smartShelves, applyFilter } from '../classification';
+  import { t } from '../i18n';
 </script>
 
 {#if $smartShelves.length > 0}
-  <section class="shelves" aria-label="Смарт-полки">
-    <h2>Полки</h2>
+  <section class="shelves" aria-label={$t('Смарт-полки')}>
+    <h2>{$t('Полки')}</h2>
     <div class="row">
       {#each $smartShelves as shelf}
         <button class="shelf" onclick={() => applyFilter(shelf.filter)}>
-          <span class="label">{shelf.label}</span>
+          <span class="label">{$t(shelf.label)}</span>
           <span class="count">{shelf.count}</span>
         </button>
       {/each}

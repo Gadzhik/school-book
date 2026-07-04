@@ -18,6 +18,7 @@
     removeUser,
     resetPassword,
   } from './users';
+  import { t, tr } from '../i18n';
 
   const ROLE_LABEL: Record<Role, string> = {
     admin: 'Администратор',
@@ -72,30 +73,30 @@
   }
 
   async function onDelete(id: string, name: string) {
-    if (confirm(`Удалить пользователя «${name}»? Действие необратимо.`)) {
+    if (confirm(tr('Удалить пользователя «{0}»? Действие необратимо.', name))) {
       await removeUser(id);
     }
   }
 
   async function onResetPw(id: string, name: string) {
-    const pw = prompt(`Новый пароль для «${name}» (минимум 4 символа):`);
+    const pw = prompt(tr('Новый пароль для «{0}» (минимум 4 символа):', name));
     if (pw === null) return;
     if (pw.length < 4) {
-      usersError.set('Пароль минимум 4 символа');
+      usersError.set(tr('Пароль минимум 4 символа'));
       return;
     }
     const err = await resetPassword(id, pw);
     usersError.set(err ?? '');
-    if (!err) alert(`Пароль для «${name}» изменён.`);
+    if (!err) alert(tr('Пароль для «{0}» изменён.', name));
   }
 </script>
 
 <section class="users">
   <div class="bar">
-    <h2>Пользователи</h2>
-    <button class="ghost sm" onclick={loadUsers} disabled={$usersBusy}>Обновить</button>
+    <h2>{$t('Пользователи')}</h2>
+    <button class="ghost sm" onclick={loadUsers} disabled={$usersBusy}>{$t('Обновить')}</button>
     <button class="primary sm" onclick={() => (showCreate = !showCreate)}>
-      {showCreate ? 'Отмена' : '+ Добавить'}
+      {showCreate ? $t('Отмена') : $t('+ Добавить')}
     </button>
   </div>
 
@@ -103,33 +104,42 @@
 
   {#if showCreate}
     <div class="create">
-      <input type="text" bind:value={fullName} placeholder="Имя и фамилия" />
+      <input type="text" bind:value={fullName} placeholder={$t('Имя и фамилия')} />
       <!-- Логин регистрозависимый — глушим автокапитализацию мобильной клавиатуры. -->
       <input
         type="text"
         bind:value={login}
-        placeholder="Логин"
+        placeholder={$t('Логин')}
         autocomplete="off"
         autocapitalize="none"
         autocorrect="off"
         spellcheck="false"
       />
-      <input type="password" bind:value={password} placeholder="Пароль (мин. 4)" autocomplete="new-password" />
+      <input
+        type="password"
+        bind:value={password}
+        placeholder={$t('Пароль (мин. 4)')}
+        autocomplete="new-password"
+      />
       <select bind:value={role}>
         {#each roles as r (r)}
-          <option value={r}>{ROLE_LABEL[r]}</option>
+          <option value={r}>{$t(ROLE_LABEL[r])}</option>
         {/each}
       </select>
-      <input type="text" bind:value={classes} placeholder="Классы через запятую (напр. 5А, 6Б)" />
+      <input
+        type="text"
+        bind:value={classes}
+        placeholder={$t('Классы через запятую (напр. 5А, 6Б)')}
+      />
       {#if role === 'teacher'}
-        <input type="text" bind:value={subjects} placeholder="Предметы через запятую" />
+        <input type="text" bind:value={subjects} placeholder={$t('Предметы через запятую')} />
       {/if}
-      <button class="primary sm" onclick={submitCreate} disabled={$usersBusy}>Создать</button>
+      <button class="primary sm" onclick={submitCreate} disabled={$usersBusy}>{$t('Создать')}</button>
     </div>
   {/if}
 
   {#if $usersList.length === 0}
-    <p class="muted">Пользователей нет.</p>
+    <p class="muted">{$t('Пользователей нет.')}</p>
   {:else}
     <ul>
       {#each $usersList as u (u.id)}
@@ -137,7 +147,7 @@
           <span class="u-name">{u.fullName}</span>
           <span class="u-login">@{u.login}</span>
           {#if u.id === myId}
-            <span class="role-static">{ROLE_LABEL[u.role]} (вы)</span>
+            <span class="role-static">{$t('{0} (вы)', $t(ROLE_LABEL[u.role]))}</span>
           {:else}
             <select
               class="role-sel"
@@ -147,31 +157,31 @@
             >
               <!-- Текущая роль показывается всегда; назначаемые — из прав. -->
               {#if !roles.includes(u.role)}
-                <option value={u.role}>{ROLE_LABEL[u.role]}</option>
+                <option value={u.role}>{$t(ROLE_LABEL[u.role])}</option>
               {/if}
               {#each roles as r (r)}
-                <option value={r}>{ROLE_LABEL[r]}</option>
+                <option value={r}>{$t(ROLE_LABEL[r])}</option>
               {/each}
             </select>
           {/if}
-          <span class="status {u.status}">{STATUS_LABEL[u.status] ?? u.status}</span>
-          {#if u.classes.length}<span class="tag">кл. {u.classes.join(', ')}</span>{/if}
+          <span class="status {u.status}">{$t(STATUS_LABEL[u.status] ?? u.status)}</span>
+          {#if u.classes.length}<span class="tag">{$t('кл. {0}', u.classes.join(', '))}</span>{/if}
           <span class="spacer"></span>
           {#if u.id !== myId}
             {#if u.status === 'blocked'}
               <button class="ghost sm" onclick={() => setBlocked(u.id, false)} disabled={$usersBusy}>
-                Разблокировать
+                {$t('Разблокировать')}
               </button>
             {:else}
               <button class="ghost sm" onclick={() => setBlocked(u.id, true)} disabled={$usersBusy}>
-                Заблокировать
+                {$t('Заблокировать')}
               </button>
             {/if}
             <button class="ghost sm" onclick={() => onResetPw(u.id, u.fullName)} disabled={$usersBusy}>
-              Сбросить пароль
+              {$t('Сбросить пароль')}
             </button>
             <button class="danger sm" onclick={() => onDelete(u.id, u.fullName)} disabled={$usersBusy}>
-              Удалить
+              {$t('Удалить')}
             </button>
           {/if}
         </li>

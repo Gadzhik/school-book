@@ -3,6 +3,7 @@
   import { pages, finishScanner, assembleProgress, scannerBusy } from './store';
   import { settings } from '../stores';
   import { requestLlm } from '../components/llm-consent';
+  import { t } from '../i18n';
 
   let title = $state('');
   let author = $state('');
@@ -28,19 +29,19 @@
 </script>
 
 <div class="assemble">
-  <h3>Собрать книгу</h3>
+  <h3>{$t('Собрать книгу')}</h3>
 
   <label>
-    Название
-    <input type="text" bind:value={title} placeholder="Например: Учебник по биологии" />
+    {$t('Название')}
+    <input type="text" bind:value={title} placeholder={$t('Например: Учебник по биологии')} />
   </label>
   <label>
-    Автор (необязательно)
-    <input type="text" bind:value={author} placeholder="Автор" />
+    {$t('Автор (необязательно)')}
+    <input type="text" bind:value={author} placeholder={$t('Автор')} />
   </label>
 
   <fieldset>
-    <legend>Формат</legend>
+    <legend>{$t('Формат')}</legend>
     {#each formats as f}
       <label class="fmt" class:disabled={!f.ready}>
         <input
@@ -51,8 +52,8 @@
           disabled={!f.ready}
           onchange={() => (format = f.value)}
         />
-        <span class="fmt-label">{f.label}</span>
-        <span class="fmt-note">{f.note}</span>
+        <span class="fmt-label">{$t(f.label)}</span>
+        <span class="fmt-note">{$t(f.note)}</span>
       </label>
     {/each}
   </fieldset>
@@ -69,10 +70,11 @@
         }}
       />
       <span class="opt-label">
-        Улучшить текст ИИ <span class="beta">β</span>
+        {$t('Улучшить текст ИИ')} <span class="beta">β</span>
         <span class="opt-note">
-          Локальная модель (бета) исправит ошибки распознавания и абзацы. Может
-          ошибаться. Нужен запущенный Ollama/LM Studio, иначе текст останется как есть. Дольше.
+          {$t(
+            'Локальная модель (бета) исправит ошибки распознавания и абзацы. Может ошибаться. Нужен запущенный Ollama/LM Studio, иначе текст останется как есть. Дольше.',
+          )}
         </span>
       </span>
     </label>
@@ -84,12 +86,12 @@
         class="bar"
         style:width={`${($assembleProgress.done / $assembleProgress.total) * 100}%`}
       ></div>
-      <span>Сборка: {$assembleProgress.done} / {$assembleProgress.total}</span>
+      <span>{$t('Сборка: {0} / {1}', $assembleProgress.done, $assembleProgress.total)}</span>
     </div>
   {/if}
 
   <button class="build" disabled={!canBuild} onclick={build}>
-    Создать книгу ({$pages.length} стр.)
+    {$t('Создать книгу ({0} стр.)', $pages.length)}
   </button>
 </div>
 

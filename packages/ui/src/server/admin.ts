@@ -5,6 +5,7 @@
 import { writable, get } from 'svelte/store';
 import type { Role, AuditEntry } from '@reader/network';
 import { authedClient, session } from './auth';
+import { tr } from '../i18n';
 
 export const auditEntries = writable<AuditEntry[]>([]);
 export const adminBusy = writable(false);
@@ -28,7 +29,7 @@ export async function loadAudit(): Promise<void> {
   try {
     auditEntries.set(await c.getAudit());
   } catch (e) {
-    adminError.set(e instanceof Error ? e.message : 'Не удалось загрузить журнал');
+    adminError.set(e instanceof Error ? e.message : tr('Не удалось загрузить журнал'));
   } finally {
     adminBusy.set(false);
   }
@@ -50,7 +51,7 @@ export async function downloadBackup(): Promise<void> {
     a.click();
     URL.revokeObjectURL(url);
   } catch (e) {
-    adminError.set(e instanceof Error ? e.message : 'Не удалось скачать копию');
+    adminError.set(e instanceof Error ? e.message : tr('Не удалось скачать копию'));
   } finally {
     adminBusy.set(false);
   }

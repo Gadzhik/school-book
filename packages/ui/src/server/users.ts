@@ -6,6 +6,7 @@
 import { writable, get } from 'svelte/store';
 import type { Role, UserAccount } from '@reader/network';
 import { authedClient, session } from './auth';
+import { tr } from '../i18n';
 
 export const usersList = writable<UserAccount[]>([]);
 export const usersBusy = writable(false);
@@ -105,7 +106,7 @@ export async function setBlocked(id: string, blocked: boolean): Promise<void> {
 /** Сменить свой пароль. Возвращает текст ошибки или null при успехе. */
 export async function changeMyPassword(oldPw: string, newPw: string): Promise<string | null> {
   const c = authedClient();
-  if (!c) return 'Нет подключения к серверу';
+  if (!c) return tr('Нет подключения к серверу');
   try {
     await c.changeMyPassword(oldPw, newPw);
     return null;
@@ -117,7 +118,7 @@ export async function changeMyPassword(oldPw: string, newPw: string): Promise<st
 /** Сбросить пароль другого пользователя (админ/power). Ошибка или null. */
 export async function resetPassword(id: string, newPw: string): Promise<string | null> {
   const c = authedClient();
-  if (!c) return 'Нет подключения к серверу';
+  if (!c) return tr('Нет подключения к серверу');
   try {
     await c.resetUserPassword(id, newPw);
     return null;

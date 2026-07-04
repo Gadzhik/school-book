@@ -4,23 +4,25 @@
   import PageStrip from './PageStrip.svelte';
   import AssembleStep from './AssembleStep.svelte';
   import Icon from '../components/Icon.svelte';
+  import { t } from '../i18n';
 
   const supported = scannerSupported();
 </script>
 
 <div class="screen">
   <header class="bar">
-    <button class="icon-btn" onclick={() => cancelScanner()} aria-label="Отмена">
+    <button class="icon-btn" onclick={() => cancelScanner()} aria-label={$t('Отмена')}>
       <Icon name="back" />
     </button>
-    <h1>Создать книгу из фото</h1>
+    <h1>{$t('Создать книгу из фото')}</h1>
   </header>
 
   <div class="body">
     {#if !supported}
       <p class="warn">
-        Сканер недоступен: браузер не поддерживает локальное файловое хранилище
-        (OPFS). Откройте приложение в установленном виде или в другом браузере.
+        {$t(
+          'Сканер недоступен: браузер не поддерживает локальное файловое хранилище (OPFS). Откройте приложение в установленном виде или в другом браузере.',
+        )}
       </p>
     {:else}
       <CaptureStep />
@@ -33,7 +35,7 @@
         <PageStrip />
         <AssembleStep />
       {:else}
-        <p class="empty">Пока нет страниц. Снимите или загрузите первую.</p>
+        <p class="empty">{$t('Пока нет страниц. Снимите или загрузите первую.')}</p>
       {/if}
     {/if}
   </div>

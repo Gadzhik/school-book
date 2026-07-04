@@ -10,6 +10,7 @@
     tagsSignature,
     uploadError,
   } from '../server/upload';
+  import { t, tr } from '../i18n';
   import Icon from './Icon.svelte';
 
   interface Props {
@@ -36,7 +37,7 @@
     publishing = true;
     publishMsg = '';
     const ok = await publishToServer(book);
-    publishMsg = ok ? '✓ на сервере' : get(uploadError) || 'ошибка';
+    publishMsg = ok ? tr('✓ на сервере') : get(uploadError) || tr('ошибка');
     publishing = false;
     if (ok) setTimeout(() => (publishMsg = ''), 2500);
   }
@@ -44,11 +45,11 @@
   async function onUnpublish(e: MouseEvent) {
     e.stopPropagation();
     if (publishing) return;
-    if (!confirm(`Снять «${book.title}» с публикации? Книга исчезнет с сервера, локальная копия останется.`)) return;
+    if (!confirm(tr('Снять «{0}» с публикации? Книга исчезнет с сервера, локальная копия останется.', book.title))) return;
     publishing = true;
     publishMsg = '';
     const ok = await unpublishFromServer(book);
-    publishMsg = ok ? 'снята с публикации' : get(uploadError) || 'ошибка';
+    publishMsg = ok ? tr('снята с публикации') : get(uploadError) || tr('ошибка');
     publishing = false;
     setTimeout(() => (publishMsg = ''), 2500);
   }
@@ -59,7 +60,7 @@
 
   async function onDelete(e: MouseEvent) {
     e.stopPropagation();
-    if (confirm(`Удалить «${book.title}» из библиотеки?`)) {
+    if (confirm(tr('Удалить «{0}» из библиотеки?', book.title))) {
       await removeBook(book.id);
     }
   }
@@ -89,7 +90,7 @@
     <p class="title" title={book.title}>{book.title}</p>
     {#if book.author}<p class="author">{book.author}</p>{/if}
     {#if percent > 0}
-      <div class="progress" aria-label={`Прочитано ${percent}%`}>
+      <div class="progress" aria-label={$t('Прочитано {0}%', percent)}>
         <div class="bar" style:width={`${percent}%`}></div>
       </div>
     {/if}
@@ -100,34 +101,34 @@
         onclick={onPublish}
         disabled={publishing}
         title={synced
-          ? 'Уже на сервере (нажмите, чтобы перезалить)'
-          : 'Опубликовать на сервере с текущими тегами'}
+          ? $t('Уже на сервере (нажмите, чтобы перезалить)')
+          : $t('Опубликовать на сервере с текущими тегами')}
       >
         {publishing
-          ? 'Подождите…'
+          ? $t('Подождите…')
           : publishMsg ||
             (synced
-              ? '✓ На сервере'
+              ? $t('✓ На сервере')
               : book.serverId
-                ? 'Обновить на сервере'
-                : 'Опубликовать на сервере')}
+                ? $t('Обновить на сервере')
+                : $t('Опубликовать на сервере'))}
       </button>
       {#if book.serverId && !publishing && !publishMsg}
         <button
           class="unpublish"
           onclick={onUnpublish}
-          title="Убрать книгу с сервера (локальная копия останется)"
+          title={$t('Убрать книгу с сервера (локальная копия останется)')}
         >
-          Снять с публикации
+          {$t('Снять с публикации')}
         </button>
       {/if}
     {/if}
   </div>
   <div class="actions">
-    <button class="act" title="Теги" onclick={onTagClick} aria-label="Теги книги">
+    <button class="act" title={$t('Теги')} onclick={onTagClick} aria-label={$t('Теги книги')}>
       <Icon name="list" size={18} />
     </button>
-    <button class="act" title="Удалить" onclick={onDelete} aria-label="Удалить книгу">
+    <button class="act" title={$t('Удалить')} onclick={onDelete} aria-label={$t('Удалить книгу')}>
       <Icon name="trash" size={18} />
     </button>
   </div>

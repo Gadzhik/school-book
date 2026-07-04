@@ -1,6 +1,7 @@
 <script lang="ts">
   import { hyphenateSyllables, lookupWord } from '@reader/core';
   import type { ScreenRect } from '@reader/reader-engine';
+  import { t } from '../i18n';
   import Icon from './Icon.svelte';
 
   interface Props {
@@ -38,16 +39,16 @@
 </script>
 
 <div class="backdrop" role="presentation" onclick={onclose}></div>
-<div class="pop" style:left={`${left}px`} style:top={`${top}px`} style:width={`${POP_W}px`} role="dialog" aria-label={`Слово ${word}`}>
+<div class="pop" style:left={`${left}px`} style:top={`${top}px`} style:width={`${POP_W}px`} role="dialog" aria-label={$t('Слово {0}', word)}>
   <header>
     <span class="word">{word}</span>
     <div class="tools">
-      <button class="icon-btn" onclick={speak} aria-label="Произнести слово"><Icon name="speaker" size={18} /></button>
-      <button class="icon-btn" onclick={onclose} aria-label="Закрыть"><Icon name="close" size={18} /></button>
+      <button class="icon-btn" onclick={speak} aria-label={$t('Произнести слово')}><Icon name="speaker" size={18} /></button>
+      <button class="icon-btn" onclick={onclose} aria-label={$t('Закрыть')}><Icon name="close" size={18} /></button>
     </div>
   </header>
 
-  <p class="syll">Слоги: <b>{syllables}</b></p>
+  <p class="syll">{$t('Слоги')}: <b>{syllables}</b></p>
 
   {#if entry}
     {#if entry.partOfSpeech}<p class="pos">{entry.partOfSpeech}</p>{/if}
@@ -55,12 +56,12 @@
       {#each entry.definitions as d}<li>{d}</li>{/each}
     </ul>
   {:else}
-    <p class="empty">В локальном словаре нет этого слова. Полный офлайн-словарь подключим позже.</p>
+    <p class="empty">{$t('В локальном словаре нет этого слова. Полный офлайн-словарь подключим позже.')}</p>
   {/if}
 
   {#if onsave}
     <button class="save" onclick={save} disabled={saved}>
-      {saved ? '✓ В «Мои слова»' : 'Сохранить в «Мои слова»'}
+      {saved ? $t('✓ В «Мои слова»') : $t('Сохранить в «Мои слова»')}
     </button>
   {/if}
 </div>

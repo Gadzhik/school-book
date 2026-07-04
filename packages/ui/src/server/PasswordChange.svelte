@@ -1,6 +1,7 @@
 <script lang="ts">
   /** Смена собственного пароля (любой вошедший пользователь). */
   import { changeMyPassword } from './users';
+  import { t, tr } from '../i18n';
 
   let open = $state(false);
   let oldPw = $state('');
@@ -14,11 +15,11 @@
     error = '';
     done = false;
     if (newPw.length < 4) {
-      error = 'Новый пароль минимум 4 символа';
+      error = tr('Новый пароль минимум 4 символа');
       return;
     }
     if (newPw !== newPw2) {
-      error = 'Пароли не совпадают';
+      error = tr('Пароли не совпадают');
       return;
     }
     busy = true;
@@ -41,16 +42,31 @@
 
 <div class="pw">
   <button class="ghost sm" onclick={() => (open = !open)}>
-    {open ? 'Скрыть смену пароля' : 'Сменить пароль'}
+    {open ? $t('Скрыть смену пароля') : $t('Сменить пароль')}
   </button>
   {#if open}
     <div class="pw-form">
-      <input type="password" bind:value={oldPw} placeholder="Текущий пароль" autocomplete="current-password" />
-      <input type="password" bind:value={newPw} placeholder="Новый пароль (мин. 4)" autocomplete="new-password" />
-      <input type="password" bind:value={newPw2} placeholder="Повторите новый" autocomplete="new-password" />
-      <button class="primary sm" onclick={submit} disabled={busy}>Сменить</button>
+      <input
+        type="password"
+        bind:value={oldPw}
+        placeholder={$t('Текущий пароль')}
+        autocomplete="current-password"
+      />
+      <input
+        type="password"
+        bind:value={newPw}
+        placeholder={$t('Новый пароль (мин. 4)')}
+        autocomplete="new-password"
+      />
+      <input
+        type="password"
+        bind:value={newPw2}
+        placeholder={$t('Повторите новый')}
+        autocomplete="new-password"
+      />
+      <button class="primary sm" onclick={submit} disabled={busy}>{$t('Сменить')}</button>
       {#if error}<p class="error">{error}</p>{/if}
-      {#if done}<p class="ok">Пароль изменён</p>{/if}
+      {#if done}<p class="ok">{$t('Пароль изменён')}</p>{/if}
     </div>
   {/if}
 </div>

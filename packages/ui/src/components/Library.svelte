@@ -7,6 +7,7 @@
   import { dueCount, refreshWords } from '../words/store';
   import { session, logout } from '../server/auth';
   import { availableCount, refreshAvailable } from '../server/store';
+  import { t } from '../i18n';
 
   // Управление книгами (добавить/сканировать) — не для ученика (ТЗ 6.1).
   const role = $derived($session?.user.role);
@@ -42,46 +43,46 @@
 <div class="library">
   <header class="head">
     <div>
-      <h1>Моя библиотека</h1>
+      <h1>{$t('Моя библиотека')}</h1>
       {#if $session}
         {@const roleLabel = ROLE_LABEL[role ?? ''] ?? role}
         <p class="sub">
-          {$session.user.fullName}{#if roleLabel !== $session.user.fullName} · {roleLabel}{/if}
+          {$session.user.fullName}{#if roleLabel !== $session.user.fullName} · {$t(roleLabel ?? '')}{/if}
         </p>
       {:else}
-        <p class="sub">Книги хранятся только на этом устройстве</p>
+        <p class="sub">{$t('Книги хранятся только на этом устройстве')}</p>
       {/if}
       {#if $settings.gamification && stats && stats.streak > 0}
-        <p class="streak" title={`Дней с чтением всего: ${stats.totalDays}`}>
-          🔥 Серия чтения: {stats.streak}
-          {stats.streak === 1 ? 'день' : stats.streak < 5 ? 'дня' : 'дней'}
+        <p class="streak" title={$t('Дней с чтением всего: {0}', stats.totalDays)}>
+          🔥 {$t('Серия чтения')}: {stats.streak}
+          {$t(stats.streak === 1 ? 'день' : stats.streak < 5 ? 'дня' : 'дней')}
         </p>
       {/if}
     </div>
     <div class="head-actions">
       <button class="words-btn" onclick={() => view.set({ name: 'words' })}>
         <Icon name="book" size={18} />
-        Мои слова
+        {$t('Мои слова')}
         {#if $dueCount > 0}<span class="badge">{$dueCount}</span>{/if}
       </button>
       <button class="words-btn" onclick={() => view.set({ name: 'report' })}>
         <Icon name="book" size={18} />
-        Отчёт
+        {$t('Отчёт')}
       </button>
       <button class="words-btn" onclick={() => view.set({ name: 'server' })}>
         <Icon name="book" size={18} />
-        Сетевая библиотека
+        {$t('Сетевая библиотека')}
         {#if $availableCount > 0}<span class="badge">{$availableCount}</span>{/if}
       </button>
       {#if canManageBooks}
         <button class="scan-btn" onclick={() => startScanner()}>
           <Icon name="plus" size={20} />
-          Создать книгу из фото
+          {$t('Создать книгу из фото')}
         </button>
       {/if}
       {#if $session}
-        <button class="words-btn" onclick={logout} title="Выйти из аккаунта">
-          Выйти
+        <button class="words-btn" onclick={logout} title={$t('Выйти из аккаунта')}>
+          {$t('Выйти')}
         </button>
       {/if}
     </div>
@@ -106,12 +107,12 @@
 
       {#if $books.length === 0}
         {#if canManageBooks}
-          <p class="empty">Пока пусто. Добавьте первую книгу — EPUB, FB2 или PDF.</p>
+          <p class="empty">{$t('Пока пусто. Добавьте первую книгу — EPUB, FB2 или PDF.')}</p>
         {:else}
-          <p class="empty">Книг пока нет. Скачайте книги класса на экране «Сетевая библиотека».</p>
+          <p class="empty">{$t('Книг пока нет. Скачайте книги класса на экране «Сетевая библиотека».')}</p>
         {/if}
       {:else if $filteredBooks.length === 0 && $filterActive}
-        <p class="empty">Под фильтр ничего не подходит. Измените условия.</p>
+        <p class="empty">{$t('Под фильтр ничего не подходит. Измените условия.')}</p>
       {/if}
     </div>
   </div>

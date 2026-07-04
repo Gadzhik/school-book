@@ -12,6 +12,7 @@
    */
   import { onMount } from 'svelte';
   import { connect } from './store';
+  import { t } from '../i18n';
 
   interface ServerInfo {
     running: boolean;
@@ -75,24 +76,24 @@
 {#if supported}
   <div class="local-server">
     <div class="ls-head">
-      <span class="ls-title">Локальный сервер</span>
+      <span class="ls-title">{$t('Локальный сервер')}</span>
       <span class="ls-state" class:on={info?.running}>
-        {info?.running ? 'запущен' : 'остановлен'}
+        {info?.running ? $t('запущен') : $t('остановлен')}
       </span>
     </div>
 
     {#if info?.running}
       <p class="ls-addr">
-        Адрес: <strong>{info.address}:{info.port}</strong>
+        {$t('Адрес:')} <strong>{info.address}:{info.port}</strong>
       </p>
       <div class="ls-row">
-        <button class="primary sm" onclick={connectLocal}>Подключиться к нему</button>
-        <button class="ghost sm" onclick={stop} disabled={busy}>Остановить</button>
+        <button class="primary sm" onclick={connectLocal}>{$t('Подключиться к нему')}</button>
+        <button class="ghost sm" onclick={stop} disabled={busy}>{$t('Остановить')}</button>
       </div>
     {:else}
-      <p class="ls-hint">Запустите сервер на этом компьютере, чтобы раздать книги в сети.</p>
+      <p class="ls-hint">{$t('Запустите сервер на этом компьютере, чтобы раздать книги в сети.')}</p>
       <button class="primary sm" onclick={start} disabled={busy}>
-        {busy ? 'Запуск…' : 'Запустить сервер'}
+        {busy ? $t('Запуск…') : $t('Запустить сервер')}
       </button>
     {/if}
 

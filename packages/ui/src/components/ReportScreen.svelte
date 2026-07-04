@@ -13,6 +13,7 @@
     type ReadingStats,
   } from '@reader/core';
   import { books, view } from '../stores';
+  import { t } from '../i18n';
   import Icon from './Icon.svelte';
 
   let words = $state<SavedWord[]>([]);
@@ -41,41 +42,41 @@
 
 <div class="screen">
   <header class="bar">
-    <button class="icon-btn" onclick={() => view.set({ name: 'library' })} aria-label="К библиотеке">
+    <button class="icon-btn" onclick={() => view.set({ name: 'library' })} aria-label={$t('К библиотеке')}>
       <Icon name="back" />
     </button>
-    <h1>Отчёт о прогрессе</h1>
+    <h1>{$t('Отчёт о прогрессе')}</h1>
   </header>
 
   <div class="body">
-    <p class="note">Только на этом устройстве. Никакие данные не отправляются в сеть.</p>
+    <p class="note">{$t('Только на этом устройстве. Никакие данные не отправляются в сеть.')}</p>
 
     <section>
-      <h2>Чтение</h2>
+      <h2>{$t('Чтение')}</h2>
       <div class="cards">
-        <div class="card"><span class="num">{$books.length}</span><span class="lbl">книг в библиотеке</span></div>
-        <div class="card"><span class="num">{reading}</span><span class="lbl">читаются сейчас</span></div>
-        <div class="card"><span class="num">{finished}</span><span class="lbl">дочитано</span></div>
-        <div class="card"><span class="num">{avgProgress}%</span><span class="lbl">средний прогресс</span></div>
+        <div class="card"><span class="num">{$books.length}</span><span class="lbl">{$t('книг в библиотеке')}</span></div>
+        <div class="card"><span class="num">{reading}</span><span class="lbl">{$t('читаются сейчас')}</span></div>
+        <div class="card"><span class="num">{finished}</span><span class="lbl">{$t('дочитано')}</span></div>
+        <div class="card"><span class="num">{avgProgress}%</span><span class="lbl">{$t('средний прогресс')}</span></div>
       </div>
     </section>
 
     <section>
-      <h2>Словарный запас</h2>
+      <h2>{$t('Словарный запас')}</h2>
       <div class="cards">
-        <div class="card"><span class="num">{words.length}</span><span class="lbl">слов сохранено</span></div>
-        <div class="card"><span class="num">{learned}</span><span class="lbl">усвоено</span></div>
-        <div class="card"><span class="num">{due}</span><span class="lbl">к повторению</span></div>
+        <div class="card"><span class="num">{words.length}</span><span class="lbl">{$t('слов сохранено')}</span></div>
+        <div class="card"><span class="num">{learned}</span><span class="lbl">{$t('усвоено')}</span></div>
+        <div class="card"><span class="num">{due}</span><span class="lbl">{$t('к повторению')}</span></div>
       </div>
     </section>
 
     {#if stats}
       <section>
-        <h2>Активность</h2>
+        <h2>{$t('Активность')}</h2>
         <div class="cards">
-          <div class="card"><span class="num">{stats.streak}</span><span class="lbl">дней серия</span></div>
-          <div class="card"><span class="num">{stats.totalDays}</span><span class="lbl">дней с чтением</span></div>
-          <div class="card"><span class="num">{stats.readToday ? 'Да' : 'Нет'}</span><span class="lbl">читали сегодня</span></div>
+          <div class="card"><span class="num">{stats.streak}</span><span class="lbl">{$t('дней серия')}</span></div>
+          <div class="card"><span class="num">{stats.totalDays}</span><span class="lbl">{$t('дней с чтением')}</span></div>
+          <div class="card"><span class="num">{stats.readToday ? $t('Да') : $t('Нет')}</span><span class="lbl">{$t('читали сегодня')}</span></div>
         </div>
       </section>
     {/if}

@@ -2,6 +2,7 @@
   import type { ScanPage } from '@reader/book-scanner';
   import { pages, movePage, removePage, retakePage, scannerBusy } from './store';
   import Icon from '../components/Icon.svelte';
+  import { t } from '../i18n';
 
   // Перетаскивание: запоминаем индекс схваченной страницы.
   let dragIndex = $state<number | null>(null);
@@ -15,7 +16,7 @@
   }
 </script>
 
-<div class="strip" role="list" aria-label="Страницы книги">
+<div class="strip" role="list" aria-label={$t('Страницы книги')}>
   {#each $pages as page, i (page.id)}
     <div
       class="page"
@@ -26,38 +27,38 @@
       ondrop={() => onDropAt(i)}
     >
       <span class="num">{i + 1}</span>
-      <img src={page.thumb} alt={`Страница ${i + 1}`} />
+      <img src={page.thumb} alt={$t('Страница {0}', i + 1)} />
       <div class="tools">
         <button
-          title="Вверх"
+          title={$t('Вверх')}
           disabled={$scannerBusy || i === 0}
           onclick={() => movePage(i, i - 1)}
-          aria-label="Переместить вверх"
+          aria-label={$t('Переместить вверх')}
         >
           <Icon name="prev" size={16} />
         </button>
         <button
-          title="Вниз"
+          title={$t('Вниз')}
           disabled={$scannerBusy || i === $pages.length - 1}
           onclick={() => movePage(i, i + 1)}
-          aria-label="Переместить вниз"
+          aria-label={$t('Переместить вниз')}
         >
           <Icon name="next" size={16} />
         </button>
         <button
-          title="Переснять"
+          title={$t('Переснять')}
           disabled={$scannerBusy}
           onclick={() => retakePage(page.id)}
-          aria-label="Переснять страницу"
+          aria-label={$t('Переснять страницу')}
         >
           <Icon name="settings" size={16} />
         </button>
         <button
           class="del"
-          title="Удалить"
+          title={$t('Удалить')}
           disabled={$scannerBusy}
           onclick={() => removePage(page.id)}
-          aria-label="Удалить страницу"
+          aria-label={$t('Удалить страницу')}
         >
           <Icon name="trash" size={16} />
         </button>

@@ -10,6 +10,7 @@
   import AuthScreen from './AuthScreen.svelte';
   // Запуск встроенного сервера (только десктоп; на вебе/мобильном прячется сам).
   import LocalServerPanel from './LocalServerPanel.svelte';
+  import { t } from '../i18n';
 
   onMount(() => {
     if ($connection) void restoreSession();
@@ -38,7 +39,7 @@
 
 <div class="welcome">
   <div class="card">
-    <h1>Читалка для школьников</h1>
+    <h1>{$t('Читалка для школьников')}</h1>
 
     {#if !$session}
       <AuthScreen />
@@ -46,21 +47,23 @@
       <LocalServerPanel />
     {:else if $session.user.status === 'pending'}
       <div class="pending">
-        <p class="big">⏳ Заявка на рассмотрении</p>
+        <p class="big">⏳ {$t('Заявка на рассмотрении')}</p>
         <p class="hint">
-          {$session.user.fullName}, ваша регистрация ожидает одобрения учителем.
-          После одобрения вы сможете войти и читать книги класса.
+          {$t(
+            '{0}, ваша регистрация ожидает одобрения учителем. После одобрения вы сможете войти и читать книги класса.',
+            $session.user.fullName,
+          )}
         </p>
         <div class="row">
-          <button class="ghost" onclick={refreshMe}>Проверить статус</button>
-          <button class="ghost" onclick={logout}>Выйти</button>
+          <button class="ghost" onclick={refreshMe}>{$t('Проверить статус')}</button>
+          <button class="ghost" onclick={logout}>{$t('Выйти')}</button>
         </div>
       </div>
     {:else if $session.user.status === 'blocked'}
       <div class="pending">
-        <p class="big">🚫 Доступ заблокирован</p>
-        <p class="hint">Обратитесь к учителю или администратору.</p>
-        <button class="ghost" onclick={logout}>Выйти</button>
+        <p class="big">🚫 {$t('Доступ заблокирован')}</p>
+        <p class="hint">{$t('Обратитесь к учителю или администратору.')}</p>
+        <button class="ghost" onclick={logout}>{$t('Выйти')}</button>
       </div>
     {/if}
   </div>

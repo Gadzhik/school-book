@@ -7,6 +7,7 @@
   import { listSubjects, listClasses, type SubjectEntry, type ClassEntry } from '@reader/core';
   import { session } from './auth';
   import { uploadBook, uploading, uploadError, uploadMsg } from './upload';
+  import { t } from '../i18n';
 
   let file = $state<File | null>(null);
   let title = $state('');
@@ -44,8 +45,8 @@
   }
 
   function onPick(e: Event) {
-    const t = e.target as HTMLInputElement;
-    file = t.files?.[0] ?? null;
+    const inp = e.target as HTMLInputElement;
+    file = inp.files?.[0] ?? null;
   }
 
   async function submit() {
@@ -67,12 +68,12 @@
 </script>
 
 <section class="upload">
-  <h3>Добавить книгу</h3>
+  <h3>{$t('Добавить книгу')}</h3>
   <input type="file" accept=".epub,.fb2,.pdf,.cbz,.mobi,.azw3" onchange={onPick} />
-  <input class="title" type="text" bind:value={title} placeholder="Название (необязательно)" />
+  <input class="title" type="text" bind:value={title} placeholder={$t('Название (необязательно)')} />
 
   <div class="group">
-    <span class="lbl">Классы</span>
+    <span class="lbl">{$t('Классы')}</span>
     <div class="chips">
       {#each classOptions as c (c.id)}
         <button
@@ -88,7 +89,7 @@
   </div>
 
   <div class="group">
-    <span class="lbl">Предметы</span>
+    <span class="lbl">{$t('Предметы')}</span>
     <div class="chips">
       {#each subjectOptions as s (s.id)}
         <button
@@ -105,12 +106,13 @@
 
   <label class="public-toggle">
     <input type="checkbox" bind:checked={publicAll} />
-    <span>Доступна всем (вся школа)</span>
+    <span>{$t('Доступна всем (вся школа)')}</span>
   </label>
   {#if restricted}
     <p class="note">
-      Без класса/предмета и без флага «Доступна всем» книгу увидите только вы и
-      администратор. Назначьте класс/предмет или включите «Доступна всем».
+      {$t(
+        'Без класса/предмета и без флага «Доступна всем» книгу увидите только вы и администратор. Назначьте класс/предмет или включите «Доступна всем».',
+      )}
     </p>
   {/if}
 
@@ -118,7 +120,7 @@
   {#if $uploadMsg}<p class="ok">{$uploadMsg}</p>{/if}
 
   <button class="primary" onclick={submit} disabled={!file || $uploading}>
-    {$uploading ? 'Загрузка…' : 'Загрузить на сервер'}
+    {$uploading ? $t('Отправка…') : $t('Загрузить на сервер')}
   </button>
 </section>
 
