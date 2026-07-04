@@ -8,6 +8,7 @@
   import type { ScreenRect } from '@reader/reader-engine';
   import { settings } from '../stores';
   import { requestLlm } from './llm-consent';
+  import { t, tr } from '../i18n';
   import Icon from './Icon.svelte';
 
   interface Props {
@@ -32,7 +33,7 @@
     try {
       result = kind === 'explain' ? await explainText(text) : await summarizeText(text);
     } catch {
-      error = 'Помощник недоступен. Запустите Ollama или LM Studio (настройки → ИИ-помощник).';
+      error = tr('Помощник недоступен. Запустите Ollama или LM Studio (настройки → ИИ-помощник).');
     } finally {
       busy = false;
     }
@@ -51,25 +52,25 @@
   style:top={`${top}px`}
   style:width={`${POP_W}px`}
   role="dialog"
-  aria-label="Помощник чтения"
+  aria-label={$t('Помощник чтения')}
 >
   <header>
     <span class="frag" title={text}>«{text.length > 60 ? text.slice(0, 60) + '…' : text}»</span>
-    <button class="icon-btn" onclick={onclose} aria-label="Закрыть"><Icon name="close" size={18} /></button>
+    <button class="icon-btn" onclick={onclose} aria-label={$t('Закрыть')}><Icon name="close" size={18} /></button>
   </header>
 
   <div class="actions">
     {#if $settings.llmEnabled}
-      <button onclick={() => run('explain')} disabled={busy}>Объяснить просто <span class="b">β</span></button>
-      <button onclick={() => run('summary')} disabled={busy}>Кратко <span class="b">β</span></button>
+      <button onclick={() => run('explain')} disabled={busy}>{$t('Объяснить просто')} <span class="b">β</span></button>
+      <button onclick={() => run('summary')} disabled={busy}>{$t('Кратко')} <span class="b">β</span></button>
     {/if}
     {#if onhighlight}
-      <button class="hl" onclick={() => onhighlight?.()} disabled={busy}>Выделить</button>
+      <button class="hl" onclick={() => onhighlight?.()} disabled={busy}>{$t('Выделить')}</button>
     {/if}
   </div>
 
   {#if busy}
-    <p class="status">Думаю…</p>
+    <p class="status">{$t('Думаю…')}</p>
   {:else if error}
     <p class="status error">{error}</p>
   {:else if result}

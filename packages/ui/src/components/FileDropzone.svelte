@@ -1,5 +1,6 @@
 <script lang="ts">
   import { addFiles } from '../stores';
+  import { t, tr } from '../i18n';
   import Icon from './Icon.svelte';
 
   let dragging = $state(false);
@@ -18,7 +19,7 @@
   async function handleFiles(files: FileList) {
     status = '';
     const added = await addFiles(files);
-    if (added.length) status = `Добавлено: ${added.length}`;
+    if (added.length) status = tr('Добавлено: {0}', added.length);
   }
 
   async function onDrop(e: DragEvent) {
@@ -49,8 +50,8 @@
   onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && input.click()}
 >
   <Icon name="plus" size={40} />
-  <p class="title">Добавить книгу</p>
-  <p class="hint">Перетащите файл сюда или нажмите, чтобы выбрать</p>
+  <p class="title">{$t('Добавить книгу')}</p>
+  <p class="hint">{$t('Перетащите файл сюда или нажмите, чтобы выбрать')}</p>
   <p class="formats">EPUB · FB2 · FB2.zip · PDF · MOBI · CBZ</p>
   {#if status}<p class="status">{status}</p>{/if}
   <input

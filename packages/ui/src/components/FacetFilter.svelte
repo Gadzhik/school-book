@@ -10,24 +10,25 @@
     setQuery,
     clearFilter,
   } from '../classification';
+  import { t } from '../i18n';
 
   function active(dim: Facet, id: string): boolean {
     return ($facetFilter[dim] ?? []).includes(id);
   }
 </script>
 
-<aside class="facets" aria-label="Фильтры">
+<aside class="facets" aria-label={$t('Фильтры')}>
   <div class="search">
     <input
       type="search"
-      placeholder="Поиск по названию или автору"
+      placeholder={$t('Поиск по названию или автору')}
       value={$facetFilter.query ?? ''}
       oninput={(e) => setQuery(e.currentTarget.value)}
     />
   </div>
 
   <section>
-    <h3>Класс</h3>
+    <h3>{$t('Класс')}</h3>
     <div class="chips">
       {#each $classes as c}
         <button
@@ -42,7 +43,7 @@
   </section>
 
   <section>
-    <h3>Предмет</h3>
+    <h3>{$t('Предмет')}</h3>
     <div class="chips">
       {#each $subjects as s}
         <button
@@ -50,14 +51,14 @@
           class:active={active('subjects', s.id)}
           onclick={() => toggleFilter('subjects', s.id)}
         >
-          {s.name}
+          {$t(s.name)}
         </button>
       {/each}
     </div>
   </section>
 
   <section>
-    <h3>Категория</h3>
+    <h3>{$t('Категория')}</h3>
     <div class="chips">
       {#each $categories as c}
         <button
@@ -65,14 +66,14 @@
           class:active={active('categories', c.id)}
           onclick={() => toggleFilter('categories', c.id)}
         >
-          {c.name}
+          {$t(c.name)}
         </button>
       {/each}
     </div>
   </section>
 
   {#if $filterActive}
-    <button class="clear" onclick={clearFilter}>Сбросить фильтр</button>
+    <button class="clear" onclick={clearFilter}>{$t('Сбросить фильтр')}</button>
   {/if}
 </aside>
 

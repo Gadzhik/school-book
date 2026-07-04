@@ -12,6 +12,7 @@
     approve,
     reject,
   } from './approvals';
+  import { t } from '../i18n';
 
   const ROLE_LABEL: Record<string, string> = {
     admin: 'Администратор',
@@ -28,28 +29,30 @@
 
 <section class="appr">
   <div class="bar">
-    <h2>Заявки и пользователи</h2>
-    <button class="ghost sm" onclick={loadApprovals} disabled={$approvalsBusy}>Обновить</button>
+    <h2>{$t('Заявки и пользователи')}</h2>
+    <button class="ghost sm" onclick={loadApprovals} disabled={$approvalsBusy}
+      >{$t('Обновить')}</button
+    >
   </div>
   {#if $approvalsError}<p class="error">{$approvalsError}</p>{/if}
 
-  <h3>Ожидают одобрения ({pending.length})</h3>
+  <h3>{$t('Ожидают одобрения ({0})', pending.length)}</h3>
   {#if pending.length === 0}
-    <p class="muted">Новых заявок нет.</p>
+    <p class="muted">{$t('Новых заявок нет.')}</p>
   {:else}
     <ul>
       {#each pending as u (u.id)}
         <li>
           <span class="u-name">{u.fullName}</span>
-          <span class="muted">{ROLE_LABEL[u.role] ?? u.role}</span>
-          {#if u.classes.length}<span class="tag">кл. {u.classes.join(', ')}</span>{/if}
+          <span class="muted">{$t(ROLE_LABEL[u.role] ?? u.role)}</span>
+          {#if u.classes.length}<span class="tag">{$t('кл. {0}', u.classes.join(', '))}</span>{/if}
           {#if u.subjects.length}<span class="tag">{u.subjects.join(', ')}</span>{/if}
           <span class="spacer"></span>
           <button class="primary sm" onclick={() => approve(u.id)} disabled={$approvalsBusy}>
-            Одобрить
+            {$t('Одобрить')}
           </button>
           <button class="ghost sm" onclick={() => reject(u.id)} disabled={$approvalsBusy}>
-            Отклонить
+            {$t('Отклонить')}
           </button>
         </li>
       {/each}
@@ -57,28 +60,28 @@
   {/if}
 
   {#if others.length}
-    <h3>Пользователи ({others.length})</h3>
+    <h3>{$t('Пользователи ({0})', others.length)}</h3>
     <ul>
       {#each others as u (u.id)}
         <li>
           <span class="u-name">{u.fullName}</span>
-          <span class="muted">{ROLE_LABEL[u.role] ?? u.role}</span>
-          {#if u.classes.length}<span class="tag">кл. {u.classes.join(', ')}</span>{/if}
+          <span class="muted">{$t(ROLE_LABEL[u.role] ?? u.role)}</span>
+          {#if u.classes.length}<span class="tag">{$t('кл. {0}', u.classes.join(', '))}</span>{/if}
           <span
             class="status"
             class:blocked={u.status === 'blocked'}
             class:active={u.status === 'active'}
           >
-            {u.status === 'blocked' ? 'заблокирован' : 'активен'}
+            {u.status === 'blocked' ? $t('заблокирован') : $t('активен')}
           </span>
           <span class="spacer"></span>
           {#if u.status === 'active'}
             <button class="ghost sm" onclick={() => reject(u.id)} disabled={$approvalsBusy}>
-              Заблокировать
+              {$t('Заблокировать')}
             </button>
           {:else}
             <button class="primary sm" onclick={() => approve(u.id)} disabled={$approvalsBusy}>
-              Разблокировать
+              {$t('Разблокировать')}
             </button>
           {/if}
         </li>

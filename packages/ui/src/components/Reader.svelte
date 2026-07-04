@@ -46,6 +46,7 @@
   import QuizPanel from './QuizPanel.svelte';
   import { requestLlm } from './llm-consent';
   import { saveWord } from '../words/store';
+  import { t, tr } from '../i18n';
   import Icon from './Icon.svelte';
 
   interface Props {
@@ -102,13 +103,13 @@
   // Квиз по главе (ТЗ Часть 6, E4)
   let quizText = $state<string | null>(null);
   async function startQuiz() {
-    const t = controller?.sampleText(6000) ?? '';
-    if (t.length < 200) {
-      alert('Маловато текста на странице для квиза — откройте главу с текстом.');
+    const txt = controller?.sampleText(6000) ?? '';
+    if (txt.length < 200) {
+      alert(tr('Маловато текста на странице для квиза — откройте главу с текстом.'));
       return;
     }
     if (!(await requestLlm())) return; // бета-ИИ: согласие/выключено
-    quizText = t;
+    quizText = txt;
   }
   let loading = $state(true);
   let error = $state<string | null>(null);
@@ -131,8 +132,8 @@
     converting = true;
     convProgress = null;
     convStatus = engine === 'mupdf'
-      ? 'Преобразование PDF в текст (mupdf)…'
-      : 'Преобразование PDF в текст…';
+      ? tr('Преобразование PDF в текст (mupdf)…')
+      : tr('Преобразование PDF в текст…');
     try {
       const file = await getBookFile(bookId);
       const toEpub = engine === 'mupdf' ? pdfMupdfToEpubFile : pdfToEpubFile;
@@ -141,12 +142,12 @@
       finishConvert(book.id);
     } catch (e) {
       if (e instanceof NoTextLayerError) {
-        if (confirm('В PDF нет текста (вероятно, скан). Распознать через OCR? Это может занять время.')) {
+        if (confirm(tr('В PDF нет текста (вероятно, скан). Распознать через OCR? Это может занять время.'))) {
           await runOcr();
           return;
         }
       } else {
-        alert(e instanceof Error ? e.message : 'Не удалось преобразовать PDF');
+        alert(e instanceof Error ? e.message : tr('Не удалось преобразовать PDF'));
       }
       converting = false;
       convProgress = null;
@@ -154,20 +155,20 @@
   }
 
   async function runOcr() {
-    convStatus = 'Распознавание текста (OCR)…';
+    convStatus = tr('Распознавание текста (OCR)…');
     convProgress = null;
     try {
       const file = await getBookFile(bookId);
       const epub = await pdfOcrToEpubFile(file, (p) => {
         convProgress = { done: p.page, total: p.total };
-        if (p.status) convStatus = `OCR: страница ${p.page}/${p.total} — ${p.status}`;
+        if (p.status) convStatus = tr('OCR: страница {0}/{1} — {2}', p.page, p.total, p.status);
       });
       const book = await addBook(epub);
       finishConvert(book.id);
     } catch (e) {
       converting = false;
       convProgress = null;
-      alert(e instanceof Error ? e.message : 'Не удалось распознать PDF');
+      alert(e instanceof Error ? e.message : tr('Не удалось распознать PDF'));
     }
   }
 
@@ -310,7 +311,7 @@
       }
     } catch (err) {
       console.error(err);
-      error = 'Не удалось открыть книгу. Возможно, формат не поддерживается.';
+      error = tr('Не удалось открыть книгу. Возможно, формат не поддерживается.');
     } finally {
       loading = false;
     }
@@ -441,7 +442,7 @@
 
 <div class="reader">
   <header class="bar">
-    <button class="icon-btn" onclick={goBack} aria-label="Назад">
+    <button class="icon-btn" onclick={goBack} aria-label={$t('Назад')}>
       <Icon name="back" />
     </button>
     <span class="title" title={title}>{title}</span>
@@ -451,16 +452,16 @@
         class="readability"
         class:easy={readability.label === 'Легко'}
         class:hard={readability.label === 'Сложно'}
-        title={`Читаемость: ${readability.label}. ${readability.ageHint}`}
+        title={`${$t('Читаемость')}: ${$t(readability.label)}. ${$t(readability.ageHint)}`}
       >
-        {readability.label}
+        {$t(readability.label)}
       </span>
     {/if}
     <button
       class="percent"
       onclick={() => (showJump = !showJump)}
-      title="Перейти к странице или проценту"
-      aria-label="Перейти к странице или проценту"
+      title={$t('Перейти к странице или проценту')}
+      aria-label={$t('Перейти к странице или проценту')}
     >
       {#if $readerIsFixedLayout && currentPage > 0 && totalSections > 0}
         {currentPage}/{totalSections}
@@ -471,25 +472,25 @@
 
     {#if canSpeak}
       {#if ttsState === 'idle'}
-        <button class="icon-btn" onclick={ttsStart} aria-label="Озвучить">
+        <button class="icon-btn" onclick={ttsStart} aria-label={$t('Озвучить')}>
           <Icon name="speaker" />
         </button>
       {:else}
         {#if ttsState === 'playing'}
-          <button class="icon-btn" onclick={ttsPause} aria-label="Пауза">
+          <button class="icon-btn" onclick={ttsPause} aria-label={$t('Пауза')}>
             <Icon name="pause" />
           </button>
         {:else}
-          <button class="icon-btn" onclick={ttsResume} aria-label="Продолжить">
+          <button class="icon-btn" onclick={ttsResume} aria-label={$t('Продолжить')}>
             <Icon name="play" />
           </button>
         {/if}
-        <button class="icon-btn" onclick={ttsStop} aria-label="Стоп озвучивания">
+        <button class="icon-btn" onclick={ttsStop} aria-label={$t('Стоп озвучивания')}>
           <Icon name="stop" />
         </button>
         <select
           class="rate"
-          aria-label="Скорость речи"
+          aria-label={$t('Скорость речи')}
           value={String(ttsRate)}
           onchange={(e) => ttsSetRate(+e.currentTarget.value)}
         >
@@ -503,10 +504,10 @@
     {/if}
 
     {#if $readerIsFixedLayout}
-      <button class="text-btn" onclick={() => makeTextual('pdfjs')} disabled={converting} title="Сделать текстовой (перетекаемый шрифт)">
-        {converting ? 'Конвертация…' : 'В текст'}
+      <button class="text-btn" onclick={() => makeTextual('pdfjs')} disabled={converting} title={$t('Сделать текстовой (перетекаемый шрифт)')}>
+        {converting ? $t('Конвертация…') : $t('В текст')}
       </button>
-      <button class="text-btn" onclick={() => makeTextual('mupdf')} disabled={converting} title="Альтернативный движок mupdf (точнее для сложных PDF)">
+      <button class="text-btn" onclick={() => makeTextual('mupdf')} disabled={converting} title={$t('Альтернативный движок mupdf (точнее для сложных PDF)')}>
         mupdf
       </button>
     {/if}
@@ -516,48 +517,48 @@
       class:active={currentBookmarked}
       onclick={toggleBookmark}
       disabled={currentLocator === undefined}
-      aria-label={currentBookmarked ? 'Убрать закладку' : 'Добавить закладку'}
-      title={currentBookmarked ? 'Убрать закладку' : 'Добавить закладку'}
+      aria-label={currentBookmarked ? $t('Убрать закладку') : $t('Добавить закладку')}
+      title={currentBookmarked ? $t('Убрать закладку') : $t('Добавить закладку')}
     >
       <Icon name="bookmark" />
     </button>
     <button
       class="icon-btn bm-list"
       onclick={() => (showBookmarks = !showBookmarks)}
-      aria-label="Закладки"
-      title="Список закладок"
+      aria-label={$t('Закладки')}
+      title={$t('Список закладок')}
     >
       <Icon name="bookmark" />
       {#if bookmarks.length + highlights.length > 0}<span class="badge">{bookmarks.length + highlights.length}</span>{/if}
     </button>
     {#if !$readerIsFixedLayout && $settings.llmEnabled}
-      <button class="text-btn" onclick={startQuiz} title="Квиз на понимание (ИИ, бета)">
-        Квиз β
+      <button class="text-btn" onclick={startQuiz} title={$t('Квиз на понимание (ИИ, бета)')}>
+        {$t('Квиз β')}
       </button>
     {/if}
-    <button class="icon-btn" onclick={() => (showToc = !showToc)} aria-label="Оглавление">
+    <button class="icon-btn" onclick={() => (showToc = !showToc)} aria-label={$t('Оглавление')}>
       <Icon name="list" />
     </button>
-    <button class="icon-btn" onclick={() => (showSettings = true)} aria-label="Настройки">
+    <button class="icon-btn" onclick={() => (showSettings = true)} aria-label={$t('Настройки')}>
       <Icon name="settings" />
     </button>
   </header>
 
   <div class="stage">
-    <button class="nav prev" onclick={() => controller?.goLeft()} aria-label="Назад">
+    <button class="nav prev" onclick={() => controller?.goLeft()} aria-label={$t('Назад')}>
       <Icon name="prev" size={32} />
     </button>
     <div class="surface" bind:this={container}></div>
-    <button class="nav next" onclick={() => controller?.goRight()} aria-label="Вперёд">
+    <button class="nav next" onclick={() => controller?.goRight()} aria-label={$t('Вперёд')}>
       <Icon name="next" size={32} />
     </button>
 
     {#if showJump}
-      <div class="jump-pop" role="dialog" aria-label="Переход по книге">
+      <div class="jump-pop" role="dialog" aria-label={$t('Переход по книге')}>
         <label>
           {$readerIsFixedLayout && totalSections > 0
-            ? `Страница (1–${totalSections})`
-            : 'Процент (0–100)'}
+            ? $t('Страница (1–{0})', totalSections)
+            : $t('Процент (0–100)')}
           <!-- svelte-ignore a11y_autofocus -->
           <input
             type="number"
@@ -567,18 +568,18 @@
             onkeydown={(e) => e.key === 'Enter' && doJump()}
           />
         </label>
-        <button class="go" onclick={doJump}>Перейти</button>
-        <button class="cancel" onclick={() => (showJump = false)}>Отмена</button>
+        <button class="go" onclick={doJump}>{$t('Перейти')}</button>
+        <button class="cancel" onclick={() => (showJump = false)}>{$t('Отмена')}</button>
       </div>
     {/if}
 
     {#if loading}
-      <div class="overlay">Загрузка книги…</div>
+      <div class="overlay">{$t('Загрузка книги…')}</div>
     {/if}
     {#if converting}
       <div class="overlay">
         {convStatus}
-        {#if convProgress}<br />Страница {convProgress.done} / {convProgress.total}{/if}
+        {#if convProgress}<br />{$t('Страница')} {convProgress.done} / {convProgress.total}{/if}
       </div>
     {/if}
     {#if error}
@@ -587,11 +588,11 @@
 
     {#if remoteContinue}
       <div class="continue-toast" role="status">
-        <span>Чтение продолжено на другом устройстве ({Math.round(remoteContinue.fraction * 100)}%).</span>
+        <span>{$t('Чтение продолжено на другом устройстве ({0}%).', Math.round(remoteContinue.fraction * 100))}</span>
         <button class="jump" onclick={jumpToRemote} disabled={!remoteContinue.locator}>
-          Перейти
+          {$t('Перейти')}
         </button>
-        <button class="dismiss" onclick={() => (remoteContinue = null)} aria-label="Скрыть">
+        <button class="dismiss" onclick={() => (remoteContinue = null)} aria-label={$t('Скрыть')}>
           <Icon name="close" size={16} />
         </button>
       </div>
@@ -599,15 +600,15 @@
   </div>
 
   {#if showToc}
-    <nav class="toc" aria-label="Оглавление">
+    <nav class="toc" aria-label={$t('Оглавление')}>
       <header>
-        <h2>Оглавление</h2>
-        <button class="icon-btn" onclick={() => (showToc = false)} aria-label="Закрыть">
+        <h2>{$t('Оглавление')}</h2>
+        <button class="icon-btn" onclick={() => (showToc = false)} aria-label={$t('Закрыть')}>
           <Icon name="close" />
         </button>
       </header>
       {#if toc.length === 0}
-        <p class="muted">Оглавление недоступно</p>
+        <p class="muted">{$t('Оглавление недоступно')}</p>
       {:else}
         <ul>
           {#each toc as item}

@@ -1,6 +1,7 @@
 <script lang="ts">
   /** QR-код из строки (для адреса сервера — ученик сканирует и подключается). */
   import QRCode from 'qrcode';
+  import { t } from '../i18n';
 
   interface Props {
     value: string;
@@ -16,7 +17,7 @@
   });
 </script>
 
-<canvas bind:this={canvas} width={size} height={size} aria-label={`QR-код: ${value}`}></canvas>
+<canvas bind:this={canvas} width={size} height={size} aria-label={$t('QR-код: {0}', value)}></canvas>
 
 <style>
   canvas {

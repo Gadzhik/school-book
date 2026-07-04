@@ -10,6 +10,7 @@
     suggestWithLLM,
   } from '../classification';
   import { requestLlm } from './llm-consent';
+  import { t, tr } from '../i18n';
   import Icon from './Icon.svelte';
 
   interface Props {
@@ -32,11 +33,11 @@
     llmMsg = '';
     try {
       const r = await suggestWithLLM(bookId);
-      if (!r.ok) llmMsg = 'ИИ недоступен. Запустите Ollama или LM Studio (настройки → ИИ-помощник).';
-      else if (r.added === 0) llmMsg = 'Модель не предложила новых тегов.';
-      else llmMsg = `Добавлено тегов: ${r.added}. Проверьте и поправьте.`;
+      if (!r.ok) llmMsg = tr('ИИ недоступен. Запустите Ollama или LM Studio (настройки → ИИ-помощник).');
+      else if (r.added === 0) llmMsg = tr('Модель не предложила новых тегов.');
+      else llmMsg = tr('Добавлено тегов: {0}. Проверьте и поправьте.', r.added);
     } catch {
-      llmMsg = 'Не удалось обратиться к модели.';
+      llmMsg = tr('Не удалось обратиться к модели.');
     } finally {
       llmBusy = false;
     }
@@ -51,37 +52,37 @@
   }
 
   function addFreeTag() {
-    const t = newTag.trim();
-    if (!t || !book) return;
+    const v = newTag.trim();
+    if (!v || !book) return;
     const cur = book.tags ?? [];
-    if (!cur.includes(t)) void tagBook(bookId, { tags: [...cur, t] });
+    if (!cur.includes(v)) void tagBook(bookId, { tags: [...cur, v] });
     newTag = '';
   }
 
-  function removeFreeTag(t: string) {
+  function removeFreeTag(v: string) {
     if (!book) return;
-    void tagBook(bookId, { tags: (book.tags ?? []).filter((x) => x !== t) });
+    void tagBook(bookId, { tags: (book.tags ?? []).filter((x) => x !== v) });
   }
 </script>
 
 <div class="backdrop" role="presentation" onclick={onclose}></div>
-<div class="dialog" role="dialog" aria-label="Теги книги" aria-modal="true">
+<div class="dialog" role="dialog" aria-label={$t('Теги книги')} aria-modal="true">
   <header>
-    <h2>Теги: {book?.title ?? ''}</h2>
-    <button class="icon-btn" onclick={onclose} aria-label="Закрыть"><Icon name="close" /></button>
+    <h2>{$t('Теги')}: {book?.title ?? ''}</h2>
+    <button class="icon-btn" onclick={onclose} aria-label={$t('Закрыть')}><Icon name="close" /></button>
   </header>
 
   {#if $settings.llmEnabled}
     <div class="ai">
       <button class="ai-btn" onclick={askLLM} disabled={llmBusy}>
-        {llmBusy ? 'Думаю…' : 'Спросить ИИ β'}
+        {llmBusy ? $t('Думаю…') : $t('Спросить ИИ β')}
       </button>
       {#if llmMsg}<span class="ai-msg">{llmMsg}</span>{/if}
     </div>
   {/if}
 
   <section>
-    <h3>Класс</h3>
+    <h3>{$t('Класс')}</h3>
     <div class="chips">
       {#each $classes as c}
         <button class="chip" class:active={has('classes', c.id)} onclick={() => toggle('classes', c.id)}>
@@ -92,33 +93,33 @@
   </section>
 
   <section>
-    <h3>Предмет</h3>
+    <h3>{$t('Предмет')}</h3>
     <div class="chips">
       {#each $subjects as s}
         <button class="chip" class:active={has('subjects', s.id)} onclick={() => toggle('subjects', s.id)}>
-          {s.name}
+          {$t(s.name)}
         </button>
       {/each}
     </div>
   </section>
 
   <section>
-    <h3>Категория</h3>
+    <h3>{$t('Категория')}</h3>
     <div class="chips">
       {#each $categories as c}
         <button class="chip" class:active={has('categories', c.id)} onclick={() => toggle('categories', c.id)}>
-          {c.name}
+          {$t(c.name)}
         </button>
       {/each}
     </div>
   </section>
 
   <section>
-    <h3>Свои теги</h3>
+    <h3>{$t('Свои теги')}</h3>
     <div class="chips">
-      {#each book?.tags ?? [] as t}
-        <button class="chip active" onclick={() => removeFreeTag(t)} title="Убрать">
-          {t} ✕
+      {#each book?.tags ?? [] as tag}
+        <button class="chip active" onclick={() => removeFreeTag(tag)} title={$t('Убрать')}>
+          {tag} ✕
         </button>
       {/each}
     </div>
@@ -126,10 +127,10 @@
       <input
         type="text"
         bind:value={newTag}
-        placeholder="Новый тег"
+        placeholder={$t('Новый тег')}
         onkeydown={(e) => e.key === 'Enter' && addFreeTag()}
       />
-      <button onclick={addFreeTag}>Добавить</button>
+      <button onclick={addFreeTag}>{$t('Добавить')}</button>
     </div>
   </section>
 </div>

@@ -15,6 +15,7 @@ import {
 } from '@reader/book-scanner';
 import { getCamera } from '@reader/adapters';
 import { refreshLibrary, view } from '../stores';
+import { tr } from '../i18n';
 
 let session: ScanSession | null = null;
 
@@ -66,7 +67,7 @@ async function withBusy<T>(fn: () => Promise<T>): Promise<T | undefined> {
     return await fn();
   } catch (err) {
     console.error(err);
-    scannerError.set(err instanceof Error ? err.message : 'Ошибка сканера');
+    scannerError.set(err instanceof Error ? err.message : tr('Ошибка сканера'));
     return undefined;
   } finally {
     scannerBusy.set(false);
@@ -133,7 +134,7 @@ export async function finishScanner(
 ): Promise<void> {
   await withBusy(async () => {
     if (!session || session.pages.length === 0) {
-      throw new Error('Добавьте хотя бы одну страницу');
+      throw new Error(tr('Добавьте хотя бы одну страницу'));
     }
     assembleProgress.set({ done: 0, total: session.pages.length });
     await saveScannedBook(

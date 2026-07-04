@@ -407,3 +407,22 @@
   (в `SelectionInfo.cfi`, секция известна из события load), живое выделение —
   фолбэк. «Выделить» = сохранить маркер-подсветку фрагмента (жёлтая, с заметкой
   по клику; список — в панели закладок, раздел «Выделения»).
+- **2026-07-04 (Windows): локализация UI ru/en (gettext-стиль) — весь UI.**
+  Новый модуль `packages/ui/src/i18n/` (`index.ts` + `en.ts`): ключ словаря —
+  русская строка-оригинал; `$t('…', a, b)` — реактивно в разметке,
+  `tr('…')` — в .ts; подстановки `{0},{1}`; выбор языка в
+  localStorage `reader:locale` (отдельно от настроек ядра), `<html lang>`
+  обновляется. Переключатель — в настройках чтения («Язык интерфейса»,
+  ru/en). Прошлая сессия перевела components/ (18 шт.) + WordsScreen; эта —
+  scanner/ (4 экрана + store), server/ (WelcomeScreen, AuthScreen,
+  ServerScreen, Approvals, BookUpload, Assignments, AdminPanel, UsersPanel,
+  PasswordChange, LocalServerPanel, UpdatePanel) и юзер-сообщения в
+  server/*.ts (auth/store/upload/approvals/assignments/admin/users) +
+  scanner/store.ts через tr(). Словарь ~504 ключей, дубли вычищены
+  (скрипт-проверка на dup-ключи). Грабли: (1) локальная `const t = e.target`
+  затеняла импорт `t` (CaptureStep, BookUpload) — переименована в `inp`;
+  (2) один ключ — один перевод: «Загрузка…» разведена (busy-кнопка
+  BookUpload → «Отправка…»); (3) даты — toLocaleDateString/String с локалью
+  из стора ($locale en→en-GB). Ошибки С СЕРВЕРА (e.message) не переводятся —
+  переводится только клиентский фолбэк. svelte-check 0/0, vitest 19/19.
+  Не сделано: серверные строки (axum) и OPDS-каталог — только русские.

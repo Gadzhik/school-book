@@ -8,6 +8,7 @@ import { getBookFile, updateBook, type BookMeta } from '@reader/core';
 import { authedClient, session } from './auth';
 import { openCatalog, refreshAvailable, refreshStatus } from './store';
 import { refreshLibrary } from '../stores';
+import { tr } from '../i18n';
 
 export const uploading = writable(false);
 export const uploadError = writable('');
@@ -77,12 +78,12 @@ export async function publishToServer(book: BookMeta): Promise<boolean> {
       await updateBook(book.id, { serverId: res.id, serverSynced: sig });
     }
     await refreshLibrary();
-    uploadMsg.set(`«${book.title}» опубликована на сервере.`);
+    uploadMsg.set(tr('«{0}» опубликована на сервере.', book.title));
     void refreshAvailable();
     void refreshStatus();
     return true;
   } catch (e) {
-    uploadError.set(e instanceof Error ? e.message : 'Не удалось опубликовать книгу');
+    uploadError.set(e instanceof Error ? e.message : tr('Не удалось опубликовать книгу'));
     return false;
   } finally {
     uploading.set(false);
@@ -110,12 +111,12 @@ export async function unpublishFromServer(book: BookMeta): Promise<boolean> {
     }
     await updateBook(book.id, { serverId: undefined, serverSynced: undefined });
     await refreshLibrary();
-    uploadMsg.set(`«${book.title}» снята с публикации.`);
+    uploadMsg.set(tr('«{0}» снята с публикации.', book.title));
     void refreshAvailable();
     void refreshStatus();
     return true;
   } catch (e) {
-    uploadError.set(e instanceof Error ? e.message : 'Не удалось снять с публикации');
+    uploadError.set(e instanceof Error ? e.message : tr('Не удалось снять с публикации'));
     return false;
   } finally {
     uploading.set(false);
@@ -131,12 +132,12 @@ export async function uploadBook(file: File, meta: UploadMeta): Promise<boolean>
   uploadMsg.set('');
   try {
     await c.uploadBook(file, { fileName: file.name, ...meta });
-    uploadMsg.set(`Книга «${meta.title || file.name}» добавлена.`);
+    uploadMsg.set(tr('Книга «{0}» добавлена.', meta.title || file.name));
     await openCatalog(); // обновить каталог
     void refreshStatus(); // и счётчик «книг: N»
     return true;
   } catch (e) {
-    uploadError.set(e instanceof Error ? e.message : 'Не удалось загрузить книгу');
+    uploadError.set(e instanceof Error ? e.message : tr('Не удалось загрузить книгу'));
     return false;
   } finally {
     uploading.set(false);

@@ -12,6 +12,7 @@ import {
   type LoginPayload,
 } from '@reader/network';
 import { connection, authToken } from './store';
+import { tr } from '../i18n';
 
 /** Сессия: к какому серверу относится, JWT и профиль. */
 interface Session {
@@ -59,7 +60,7 @@ function setSession(s: Session | null): void {
 /** Клиент для авторизации к текущему подключённому серверу. */
 function authClient(token?: string): LibraryServerClient {
   const conn = get(connection);
-  if (!conn) throw new Error('Сначала подключитесь к серверу');
+  if (!conn) throw new Error(tr('Сначала подключитесь к серверу'));
   return new LibraryServerClient({ baseUrl: conn.baseUrl, name: conn.name }, { token });
 }
 
@@ -82,12 +83,12 @@ export async function register(payload: RegisterPayload): Promise<boolean> {
   authError.set('');
   try {
     const conn = get(connection);
-    if (!conn) throw new Error('Сначала подключитесь к серверу');
+    if (!conn) throw new Error(tr('Сначала подключитесь к серверу'));
     const res = await authClient().register(payload);
     setSession({ baseUrl: conn.baseUrl, token: res.token, user: res.user });
     return true;
   } catch (e) {
-    authError.set(e instanceof Error ? e.message : 'Не удалось зарегистрироваться');
+    authError.set(e instanceof Error ? e.message : tr('Не удалось зарегистрироваться'));
     return false;
   } finally {
     authBusy.set(false);
@@ -100,12 +101,12 @@ export async function login(payload: LoginPayload): Promise<boolean> {
   authError.set('');
   try {
     const conn = get(connection);
-    if (!conn) throw new Error('Сначала подключитесь к серверу');
+    if (!conn) throw new Error(tr('Сначала подключитесь к серверу'));
     const res = await authClient().login(payload);
     setSession({ baseUrl: conn.baseUrl, token: res.token, user: res.user });
     return true;
   } catch (e) {
-    authError.set(e instanceof Error ? e.message : 'Не удалось войти');
+    authError.set(e instanceof Error ? e.message : tr('Не удалось войти'));
     return false;
   } finally {
     authBusy.set(false);

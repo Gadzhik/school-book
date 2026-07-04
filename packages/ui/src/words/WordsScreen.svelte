@@ -3,6 +3,7 @@
   import { type SavedWord, type ReviewGrade, wordsToCsv, wordsToMarkdown } from '@reader/core';
   import { view } from '../stores';
   import { words, dueCount, refreshWords, deleteWord, gradeWord, loadDue } from './store';
+  import { t, tr } from '../i18n';
   import Icon from '../components/Icon.svelte';
 
   type Mode = 'list' | 'review';
@@ -55,27 +56,27 @@
   }
 
   function exportCsv() {
-    download(wordsToCsv($words), 'мои-слова.csv', 'text/csv;charset=utf-8');
+    download(wordsToCsv($words), tr('мои-слова') + '.csv', 'text/csv;charset=utf-8');
   }
   function exportMarkdown() {
-    download(wordsToMarkdown($words), 'мои-слова.md', 'text/markdown;charset=utf-8');
+    download(wordsToMarkdown($words), tr('мои-слова') + '.md', 'text/markdown;charset=utf-8');
   }
 </script>
 
 <div class="screen">
   <header class="bar">
-    <button class="icon-btn" onclick={() => view.set({ name: 'library' })} aria-label="К библиотеке">
+    <button class="icon-btn" onclick={() => view.set({ name: 'library' })} aria-label={$t('К библиотеке')}>
       <Icon name="back" />
     </button>
-    <h1>Мои слова</h1>
+    <h1>{$t('Мои слова')}</h1>
     <span class="spacer"></span>
     {#if mode === 'list' && $words.length > 0}
-      <button class="export-btn" onclick={exportMarkdown} title="Экспорт в Markdown">MD</button>
-      <button class="export-btn" onclick={exportCsv} title="Экспорт в CSV">CSV</button>
+      <button class="export-btn" onclick={exportMarkdown} title={$t('Экспорт в Markdown')}>MD</button>
+      <button class="export-btn" onclick={exportCsv} title={$t('Экспорт в CSV')}>CSV</button>
     {/if}
     {#if mode === 'list' && $dueCount > 0}
       <button class="review-btn" onclick={startReview}>
-        Повторять ({$dueCount})
+        {$t('Повторять')} ({$dueCount})
       </button>
     {/if}
   </header>
@@ -85,32 +86,32 @@
       <div class="card">
         <div class="front">
           <span class="word">{card.word}</span>
-          <button class="icon-btn" onclick={() => speak(card.word)} aria-label="Произнести">
+          <button class="icon-btn" onclick={() => speak(card.word)} aria-label={$t('Произнести')}>
             <Icon name="speaker" />
           </button>
         </div>
 
         {#if revealed}
-          <p class="syll">Слоги: <b>{card.syllables}</b></p>
+          <p class="syll">{$t('Слоги')}: <b>{card.syllables}</b></p>
           {#if card.definition}
             <p class="def">{card.definition}</p>
           {:else}
-            <p class="def muted">Определение не сохранено.</p>
+            <p class="def muted">{$t('Определение не сохранено.')}</p>
           {/if}
           <div class="grades">
-            <button class="g again" onclick={() => grade('again')}>Не помню</button>
-            <button class="g good" onclick={() => grade('good')}>Помню</button>
-            <button class="g easy" onclick={() => grade('easy')}>Легко</button>
+            <button class="g again" onclick={() => grade('again')}>{$t('Не помню')}</button>
+            <button class="g good" onclick={() => grade('good')}>{$t('Помню')}</button>
+            <button class="g easy" onclick={() => grade('easy')}>{$t('Легко')}</button>
           </div>
         {:else}
-          <button class="reveal" onclick={() => (revealed = true)}>Показать</button>
+          <button class="reveal" onclick={() => (revealed = true)}>{$t('Показать')}</button>
         {/if}
 
         <p class="counter">{pos + 1} / {queue.length}</p>
       </div>
     {:else}
       {#if $words.length === 0}
-        <p class="empty">Пока нет сохранённых слов. Нажмите на слово в книге → «Сохранить».</p>
+        <p class="empty">{$t('Пока нет сохранённых слов. Нажмите на слово в книге → «Сохранить».')}</p>
       {:else}
         <ul class="list">
           {#each $words as w (w.id)}
@@ -120,7 +121,7 @@
                 <span class="ls">{w.syllables}</span>
                 {#if w.definition}<span class="ld">{w.definition}</span>{/if}
               </div>
-              <button class="icon-btn" onclick={() => deleteWord(w.id)} aria-label="Удалить слово">
+              <button class="icon-btn" onclick={() => deleteWord(w.id)} aria-label={$t('Удалить слово')}>
                 <Icon name="trash" size={18} />
               </button>
             </li>

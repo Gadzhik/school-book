@@ -6,6 +6,7 @@
 import { writable, get } from 'svelte/store';
 import type { Role, UserAccount } from '@reader/network';
 import { authedClient, session } from './auth';
+import { tr } from '../i18n';
 
 /** Пользователи, доступные текущему для управления (с сервера). */
 export const manageableUsers = writable<UserAccount[]>([]);
@@ -31,7 +32,7 @@ export async function loadApprovals(): Promise<void> {
   try {
     manageableUsers.set(await c.listUsers());
   } catch (e) {
-    approvalsError.set(e instanceof Error ? e.message : 'Не удалось загрузить заявки');
+    approvalsError.set(e instanceof Error ? e.message : tr('Не удалось загрузить заявки'));
   } finally {
     approvalsBusy.set(false);
   }
@@ -56,7 +57,7 @@ async function act(fn: (c: NonNullable<ReturnType<typeof authedClient>>) => Prom
     await fn(c);
     manageableUsers.set(await c.listUsers());
   } catch (e) {
-    approvalsError.set(e instanceof Error ? e.message : 'Действие не выполнено');
+    approvalsError.set(e instanceof Error ? e.message : tr('Действие не выполнено'));
   } finally {
     approvalsBusy.set(false);
   }

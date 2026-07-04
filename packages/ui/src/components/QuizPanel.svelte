@@ -4,6 +4,7 @@
    * тексту главы; ученик отвечает, видит результат и пояснения. Офлайн.
    */
   import { generateQuiz, type QuizQuestion } from '@reader/core';
+  import { t, tr } from '../i18n';
   import Icon from './Icon.svelte';
 
   interface Props {
@@ -31,7 +32,7 @@
       questions = await generateQuiz(text, { count: 5 });
       answers = new Array(questions.length).fill(-1);
     } catch (e) {
-      error = e instanceof Error ? e.message : 'Не удалось составить квиз';
+      error = e instanceof Error ? e.message : tr('Не удалось составить квиз');
     } finally {
       loading = false;
     }
@@ -50,20 +51,20 @@
 </script>
 
 <div class="backdrop" role="presentation" onclick={onclose}></div>
-<aside class="panel" aria-label="Квиз">
+<aside class="panel" aria-label={$t('Квиз')}>
   <header>
-    <h2>Проверь себя</h2>
-    <button class="icon-btn" onclick={onclose} aria-label="Закрыть"><Icon name="close" /></button>
+    <h2>{$t('Проверь себя')}</h2>
+    <button class="icon-btn" onclick={onclose} aria-label={$t('Закрыть')}><Icon name="close" /></button>
   </header>
 
   {#if loading}
-    <p class="status">Составляю вопросы…</p>
+    <p class="status">{$t('Составляю вопросы…')}</p>
   {:else if error}
     <p class="status error">{error}</p>
-    <button class="ghost" onclick={run}>Повторить</button>
+    <button class="ghost" onclick={run}>{$t('Повторить')}</button>
   {:else}
     {#if submitted}
-      <p class="score">Результат: {score} из {questions.length}</p>
+      <p class="score">{$t('Результат: {0} из {1}', score, questions.length)}</p>
     {/if}
     <ol class="quiz">
       {#each questions as q, qi (qi)}
@@ -94,10 +95,10 @@
 
     {#if !submitted}
       <button class="primary" onclick={() => (submitted = true)} disabled={!allAnswered}>
-        Проверить
+        {$t('Проверить')}
       </button>
     {:else}
-      <button class="ghost" onclick={run}>Новый квиз</button>
+      <button class="ghost" onclick={run}>{$t('Новый квиз')}</button>
     {/if}
   {/if}
 </aside>

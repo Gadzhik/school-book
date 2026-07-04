@@ -17,6 +17,7 @@ import {
 } from '@reader/network';
 import { updateBook } from '@reader/core';
 import { importServerBook, books, refreshLibrary } from '../stores';
+import { tr } from '../i18n';
 
 /** Сохранённое подключение (адрес + токен пэйринга). */
 interface SavedConnection {
@@ -140,7 +141,7 @@ export async function connect(input: string, token?: string): Promise<boolean> {
     return true;
   } catch (e) {
     connectError.set(
-      e instanceof Error ? `Не удалось подключиться: ${e.message}` : 'Не удалось подключиться',
+      e instanceof Error ? tr('Не удалось подключиться: {0}', e.message) : tr('Не удалось подключиться'),
     );
     return false;
   } finally {
@@ -180,7 +181,7 @@ export async function openCatalog(path = '/opds/all', push = false): Promise<voi
     catalogStack.update((s) => (push ? [...s, path] : [path]));
   } catch (e) {
     connectError.set(
-      e instanceof Error ? `Каталог недоступен: ${e.message}` : 'Каталог недоступен',
+      e instanceof Error ? tr('Каталог недоступен: {0}', e.message) : tr('Каталог недоступен'),
     );
   }
 }
@@ -197,7 +198,7 @@ export async function catalogBack(): Promise<void> {
     catalogStack.set(stack.slice(0, -1));
   } catch (e) {
     connectError.set(
-      e instanceof Error ? `Каталог недоступен: ${e.message}` : 'Каталог недоступен',
+      e instanceof Error ? tr('Каталог недоступен: {0}', e.message) : tr('Каталог недоступен'),
     );
   }
 }
@@ -326,7 +327,7 @@ export async function restoreSession(): Promise<void> {
     void checkUpdate();
   } catch {
     serverStatus.set(null);
-    connectError.set('Сервер сейчас недоступен. Подключитесь снова.');
+    connectError.set(tr('Сервер сейчас недоступен. Подключитесь снова.'));
   } finally {
     connecting.set(false);
   }
@@ -369,7 +370,7 @@ export async function downloadEntry(entry: OpdsEntry): Promise<boolean> {
     return true;
   } catch (e) {
     connectError.set(
-      e instanceof Error ? `Не удалось скачать: ${e.message}` : 'Не удалось скачать книгу',
+      e instanceof Error ? tr('Не удалось скачать: {0}', e.message) : tr('Не удалось скачать книгу'),
     );
     return false;
   } finally {

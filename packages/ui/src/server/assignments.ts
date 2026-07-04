@@ -11,6 +11,7 @@ import type {
   AssignmentReportRow,
 } from '@reader/network';
 import { authedClient, session } from './auth';
+import { tr } from '../i18n';
 
 export const assignments = writable<(Assignment | AssignmentForStudent)[]>([]);
 export const assignmentsBusy = writable(false);
@@ -39,7 +40,7 @@ export async function loadAssignments(): Promise<void> {
   try {
     assignments.set(await c.listAssignments());
   } catch (e) {
-    assignmentsError.set(e instanceof Error ? e.message : 'Не удалось загрузить задания');
+    assignmentsError.set(e instanceof Error ? e.message : tr('Не удалось загрузить задания'));
   } finally {
     assignmentsBusy.set(false);
   }
@@ -73,7 +74,7 @@ export async function createAssignment(input: AssignmentInput): Promise<boolean>
     await loadAssignments();
     return true;
   } catch (e) {
-    assignmentsError.set(e instanceof Error ? e.message : 'Не удалось создать задание');
+    assignmentsError.set(e instanceof Error ? e.message : tr('Не удалось создать задание'));
     return false;
   } finally {
     assignmentsBusy.set(false);
@@ -88,7 +89,7 @@ export async function deleteAssignment(id: string): Promise<void> {
     await c.deleteAssignment(id);
     await loadAssignments();
   } catch (e) {
-    assignmentsError.set(e instanceof Error ? e.message : 'Не удалось удалить');
+    assignmentsError.set(e instanceof Error ? e.message : tr('Не удалось удалить'));
   }
 }
 
@@ -100,7 +101,7 @@ export async function markProgress(id: string, status: 'reading' | 'done'): Prom
     await c.setAssignmentProgress(id, status, status === 'done' ? 1 : 0);
     await loadAssignments();
   } catch (e) {
-    assignmentsError.set(e instanceof Error ? e.message : 'Не удалось отметить');
+    assignmentsError.set(e instanceof Error ? e.message : tr('Не удалось отметить'));
   }
 }
 
@@ -112,7 +113,7 @@ export async function loadReport(id: string): Promise<void> {
     const rows = await c.assignmentReport(id);
     reports.update((r) => ({ ...r, [id]: rows }));
   } catch (e) {
-    assignmentsError.set(e instanceof Error ? e.message : 'Не удалось загрузить отчёт');
+    assignmentsError.set(e instanceof Error ? e.message : tr('Не удалось загрузить отчёт'));
   }
 }
 

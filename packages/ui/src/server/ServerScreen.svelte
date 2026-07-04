@@ -42,6 +42,7 @@
   import PasswordChange from './PasswordChange.svelte';
   import QrCode from '../components/QrCode.svelte';
   import Icon from '../components/Icon.svelte';
+  import { t, tr } from '../i18n';
 
   let showShare = $state(false);
   let copied = $state(false);
@@ -103,7 +104,7 @@
   // Подпись роли; скрываем, если совпадает с ФИО (напр. встроенный
   // «Администратор» — чтобы не дублировать одно и то же слово).
   const userRoleLabel = $derived(
-    $session ? (ROLE_LABEL[$session.user.role] ?? $session.user.role) : '',
+    $session ? $t(ROLE_LABEL[$session.user.role] ?? $session.user.role) : '',
   );
 
   let wordsMsg = $state('');
@@ -115,8 +116,8 @@
     wordsMsg = '';
     const r = await syncWords();
     wordsMsg = r.ok
-      ? `Слова синхронизированы (↑${r.pushed} ↓${r.pulled}).`
-      : 'Не удалось синхронизировать слова.';
+      ? tr('Слова синхронизированы (↑{0} ↓{1}).', r.pushed, r.pulled)
+      : tr('Не удалось синхронизировать слова.');
     wordsSyncing = false;
   }
 
@@ -129,8 +130,14 @@
     marksMsg = '';
     const r = await syncMarks();
     marksMsg = r.ok
-      ? `Заметки синхронизированы (закладки ↑${r.bookmarks.pushed} ↓${r.bookmarks.pulled}, выделения ↑${r.highlights.pushed} ↓${r.highlights.pulled}).`
-      : 'Не удалось синхронизировать заметки.';
+      ? tr(
+          'Заметки синхронизированы (закладки ↑{0} ↓{1}, выделения ↑{2} ↓{3}).',
+          r.bookmarks.pushed,
+          r.bookmarks.pulled,
+          r.highlights.pushed,
+          r.highlights.pulled,
+        )
+      : tr('Не удалось синхронизировать заметки.');
     marksSyncing = false;
   }
 
@@ -165,9 +172,9 @@
     connectError.set('');
     try {
       discovered = await invoke<DiscoveredServer[]>('discover_servers');
-      if (discovered.length === 0) connectError.set('Серверы в сети не найдены.');
+      if (discovered.length === 0) connectError.set(tr('Серверы в сети не найдены.'));
     } catch {
-      connectError.set('Поиск не удался.');
+      connectError.set(tr('Поиск не удался.'));
     } finally {
       discovering = false;
     }
@@ -250,7 +257,7 @@
       };
       rafId = requestAnimationFrame(() => void tick());
     } catch {
-      connectError.set('Камера недоступна. Введите адрес вручную.');
+      connectError.set(tr('Камера недоступна. Введите адрес вручную.'));
       stopScan();
     }
   }
@@ -267,39 +274,39 @@
 <div class="screen">
   <header class="head">
     <button class="back" onclick={() => view.set({ name: 'library' })}>
-      <Icon name="close" size={18} /> Библиотека
+      <Icon name="close" size={18} /> {$t('Библиотека')}
     </button>
-    <h1>Сетевая библиотека</h1>
+    <h1>{$t('Сетевая библиотека')}</h1>
   </header>
 
   {#if !$serverStatus}
     <section class="connect">
       <p class="hint">
-        Подключитесь к серверу читалки в локальной сети: введите адрес
-        (например <code>192.168.1.10:9700</code>) или отсканируйте QR с сервера.
+        {$t('Подключитесь к серверу читалки в локальной сети: введите адрес (например')}
+        <code>192.168.1.10:9700</code>{$t(') или отсканируйте QR с сервера.')}
       </p>
       <div class="form">
         <input
           type="text"
           bind:value={address}
-          placeholder="192.168.1.10:9700 или http://…"
+          placeholder={$t('192.168.1.10:9700 или http://…')}
           onkeydown={(e) => e.key === 'Enter' && submit()}
         />
         <button class="primary" onclick={submit} disabled={$connecting}>
-          {$connecting ? 'Подключение…' : 'Подключиться'}
+          {$connecting ? $t('Подключение…') : $t('Подключиться')}
         </button>
         {#if qrSupported && !scanning}
-          <button class="ghost" onclick={startScan}>Сканировать QR</button>
+          <button class="ghost" onclick={startScan}>{$t('Сканировать QR')}</button>
         {/if}
         {#if hasTauri}
           <button class="ghost" onclick={discover} disabled={discovering}>
-            {discovering ? 'Поиск…' : 'Найти серверы (LAN)'}
+            {discovering ? $t('Поиск…') : $t('Найти серверы (LAN)')}
           </button>
         {/if}
         {#if devMode}
           <button
             class="ghost"
-            title="Адрес хоста для приложения в Android-эмуляторе"
+            title={$t('Адрес хоста для приложения в Android-эмуляторе')}
             onclick={() => (address = '10.0.2.2:9700')}
           >
             Android-эмулятор
@@ -313,7 +320,9 @@
             <li>
               <span class="d-name">{srv.name ?? srv.baseUrl}</span>
               <span class="muted">{srv.baseUrl}</span>
-              <button class="primary sm" onclick={() => connect(srv.baseUrl)}>Подключиться</button>
+              <button class="primary sm" onclick={() => connect(srv.baseUrl)}
+                >{$t('Подключиться')}</button
+              >
             </li>
           {/each}
         </ul>
@@ -323,7 +332,7 @@
         <div class="scanner">
           <!-- svelte-ignore a11y_media_has_caption -->
           <video bind:this={videoEl} playsinline></video>
-          <button class="ghost" onclick={stopScan}>Отмена</button>
+          <button class="ghost" onclick={stopScan}>{$t('Отмена')}</button>
         </div>
       {/if}
 
@@ -336,29 +345,29 @@
     <section class="connected">
       <div class="server-bar">
         <span class="dot"></span>
-        <strong>{$serverStatus.name ?? 'Сервер'}</strong>
-        <span class="muted">книг: {$serverStatus.books ?? '—'}</span>
+        <strong>{$serverStatus.name ?? $t('Сервер')}</strong>
+        <span class="muted">{$t('книг: {0}', $serverStatus.books ?? '—')}</span>
         <button
           class="ghost"
           onclick={() => {
             void refreshStatus(); // счётчик «книг: N» тоже освежаем
             void openCatalog();
-          }}>Обновить</button
+          }}>{$t('Обновить')}</button
         >
         {#if shareUrl}
           <button class="ghost" onclick={() => (showShare = !showShare)}>
-            {showShare ? 'Скрыть адрес' : 'Поделиться доступом'}
+            {showShare ? $t('Скрыть адрес') : $t('Поделиться доступом')}
           </button>
         {/if}
         {#if $session && $session.user.status === 'active'}
           <button class="ghost" onclick={doSyncWords} disabled={wordsSyncing}>
-            {wordsSyncing ? 'Синхронизация…' : 'Синхронизировать слова'}
+            {wordsSyncing ? $t('Синхронизация…') : $t('Синхронизировать слова')}
           </button>
           <button class="ghost" onclick={doSyncMarks} disabled={marksSyncing}>
-            {marksSyncing ? 'Синхронизация…' : 'Синхронизировать заметки'}
+            {marksSyncing ? $t('Синхронизация…') : $t('Синхронизировать заметки')}
           </button>
         {/if}
-        <button class="ghost" onclick={disconnect}>Отключиться</button>
+        <button class="ghost" onclick={disconnect}>{$t('Отключиться')}</button>
       </div>
 
       <!-- Вкладка «Доступно обновление»: видна, когда на сервере выложена
@@ -376,35 +385,35 @@
             class:pending={$session.user.status === 'pending'}
             class:active={$session.user.status === 'active'}
           >
-            {STATUS_LABEL[$session.user.status] ?? $session.user.status}
+            {$t(STATUS_LABEL[$session.user.status] ?? $session.user.status)}
           </span>
-          <button class="ghost sm" onclick={refreshMe}>Обновить статус</button>
+          <button class="ghost sm" onclick={refreshMe}>{$t('Обновить статус')}</button>
           {#if $session.user.status === 'active' && canManage($session.user.role)}
             <button
               class="ghost sm approvals-btn"
               class:has-pending={pendingCount > 0}
               onclick={() => (showApprovals = !showApprovals)}
             >
-              {showApprovals ? 'Скрыть заявки' : 'Заявки'}
+              {showApprovals ? $t('Скрыть заявки') : $t('Заявки')}
               {#if pendingCount > 0}<span class="appr-badge">{pendingCount}</span>{/if}
             </button>
           {/if}
           {#if $session.user.status === 'active' && canUpload($session.user.role)}
             <button class="ghost sm" onclick={() => (showUpload = !showUpload)}>
-              {showUpload ? 'Скрыть загрузку' : 'Добавить книгу'}
+              {showUpload ? $t('Скрыть загрузку') : $t('Добавить книгу')}
             </button>
           {/if}
           {#if $session.user.status === 'active'}
             <button class="ghost sm" onclick={() => (showAssignments = !showAssignments)}>
-              {showAssignments ? 'Скрыть задания' : 'Задания'}
+              {showAssignments ? $t('Скрыть задания') : $t('Задания')}
             </button>
           {/if}
           {#if $session.user.status === 'active' && canAudit($session.user.role)}
             <button class="ghost sm" onclick={() => (showAdmin = !showAdmin)}>
-              {showAdmin ? 'Скрыть журнал' : 'Журнал'}
+              {showAdmin ? $t('Скрыть журнал') : $t('Журнал')}
             </button>
           {/if}
-          <button class="ghost sm" onclick={logout}>Выйти</button>
+          <button class="ghost sm" onclick={logout}>{$t('Выйти')}</button>
         </div>
       {/if}
 
@@ -428,10 +437,14 @@
       {#if showShare && shareUrl}
         <div class="share">
           <div class="share-info">
-            <p class="muted">Адрес для подключения других устройств:</p>
+            <p class="muted">{$t('Адрес для подключения других устройств:')}</p>
             <code class="share-url">{shareUrl}</code>
-            <button class="ghost sm" onclick={copyShare}>{copied ? 'Скопировано ✓' : 'Копировать'}</button>
-            <p class="muted">Откройте «Сервер» на другом устройстве и отсканируйте QR или введите адрес.</p>
+            <button class="ghost sm" onclick={copyShare}
+              >{copied ? $t('Скопировано ✓') : $t('Копировать')}</button
+            >
+            <p class="muted">
+              {$t('Откройте «Сервер» на другом устройстве и отсканируйте QR или введите адрес.')}
+            </p>
           </div>
           <QrCode value={shareUrl} size={160} />
         </div>
@@ -445,8 +458,9 @@
         <AuthScreen />
       {:else if $session.user.status === 'pending'}
         <p class="pending-note">
-          Ваша заявка ожидает одобрения учителем. После одобрения станут доступны
-          книги класса. Можно нажать «Обновить статус».
+          {$t(
+            'Ваша заявка ожидает одобрения учителем. После одобрения станут доступны книги класса. Можно нажать «Обновить статус».',
+          )}
         </p>
       {/if}
 
@@ -455,14 +469,16 @@
           <input
             type="search"
             bind:value={searchQ}
-            placeholder="Поиск книги по названию или автору"
+            placeholder={$t('Поиск книги по названию или автору')}
             onkeydown={(e) => e.key === 'Enter' && runSearch()}
           />
-          <button class="primary sm" onclick={runSearch}>Найти</button>
-          <button class="ghost sm" onclick={clearSearch}>Все книги</button>
-          <button class="ghost sm" onclick={() => openCatalog('/opds')}>По разделам</button>
+          <button class="primary sm" onclick={runSearch}>{$t('Найти')}</button>
+          <button class="ghost sm" onclick={clearSearch}>{$t('Все книги')}</button>
+          <button class="ghost sm" onclick={() => openCatalog('/opds')}>{$t('По разделам')}</button>
           {#if canUpload($session.user.role)}
-            <button class="ghost sm" onclick={() => openCatalog('/opds/mine')}>Мои книги</button>
+            <button class="ghost sm" onclick={() => openCatalog('/opds/mine')}
+              >{$t('Мои книги')}</button
+            >
           {/if}
         </div>
       {/if}
@@ -471,13 +487,13 @@
         <div class="feed-head">
           {#if $canCatalogBack}
             <button class="ghost sm" onclick={catalogBack}>
-              <Icon name="close" size={16} /> Назад
+              <Icon name="close" size={16} /> {$t('Назад')}
             </button>
           {/if}
           <h2 class="feed-title">{$catalog.feed.title}</h2>
         </div>
         {#if $catalog.feed.entries.length === 0}
-          <p class="muted">Каталог пуст.</p>
+          <p class="muted">{$t('Каталог пуст.')}</p>
         {/if}
         <ul class="entries">
           {#each $catalog.feed.entries as entry (entry.id)}
@@ -499,8 +515,10 @@
               {#if isBook(entry)}
                 {@const localId = downloadedMap.get(serverIdOf(entry))}
                 {#if localId}
-                  <button class="primary sm" onclick={() => openLocal(localId)}>Открыть</button>
-                  <span class="downloaded">✓ скачано</span>
+                  <button class="primary sm" onclick={() => openLocal(localId)}
+                    >{$t('Открыть')}</button
+                  >
+                  <span class="downloaded">{$t('✓ скачано')}</span>
                 {:else}
                   <button
                     class="primary sm"
@@ -508,21 +526,23 @@
                     onclick={() => downloadEntry(entry)}
                   >
                     {$downloading.has(entry.id || entry.acquisitionHref || '')
-                      ? 'Скачивание…'
-                      : 'Скачать'}
+                      ? $t('Скачивание…')
+                      : $t('Скачать')}
                   </button>
                 {/if}
               {:else}
                 {@const href = navHref(entry)}
                 {#if href}
-                  <button class="ghost sm" onclick={() => openCatalog(href, true)}>Открыть</button>
+                  <button class="ghost sm" onclick={() => openCatalog(href, true)}
+                    >{$t('Открыть')}</button
+                  >
                 {/if}
               {/if}
             </li>
           {/each}
         </ul>
       {:else if $connecting}
-        <p class="muted">Загрузка каталога…</p>
+        <p class="muted">{$t('Загрузка каталога…')}</p>
       {/if}
     </section>
   {/if}
