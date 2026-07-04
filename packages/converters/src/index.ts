@@ -23,6 +23,8 @@ export {
 export { ocrImage, ocrWords, terminateOcr, type OcrProgress, type OcrWord } from './ocr/tesseract';
 // Альтернативный PDF-адаптер на mupdf-wasm (AGPL-3.0) — взаимозаменяем с pdf.js.
 export { convertPdfMupdf, pdfMupdfToEpubFile } from './formats/pdf-mupdf';
+// Сжатие PDF без потери качества (mupdf clean) — явное действие учителя/админа.
+export { compressPdf, type CompressPdfResult } from './formats/pdf-compress';
 
 // Побочный эффект: регистрируем встроенные конвертеры (HTML/MD/TXT/DOCX/RTF/ODT).
 import './register-builtin';

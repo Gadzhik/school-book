@@ -9,22 +9,52 @@
     listWords,
     countDueWords,
     getReadingStats,
+    getDiary,
+    diaryToMarkdown,
     type SavedWord,
     type ReadingStats,
+    type DiaryDay,
   } from '@reader/core';
   import { books, view } from '../stores';
-  import { t } from '../i18n';
+  import { t, tr } from '../i18n';
   import Icon from './Icon.svelte';
 
   let words = $state<SavedWord[]>([]);
   let due = $state(0);
   let stats = $state<ReadingStats | null>(null);
+  let diary = $state<DiaryDay[]>([]);
 
   onMount(async () => {
     words = await listWords();
     due = await countDueWords();
     stats = getReadingStats();
+    diary = getDiary();
   });
+
+  /** Новые слова по дням — для строк дневника и экспорта. */
+  const wordsByDay = $derived.by(() => {
+    const m = new Map<string, number>();
+    for (const w of words) {
+      const d = new Date(w.addedAt);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      m.set(key, (m.get(key) ?? 0) + 1);
+    }
+    return m;
+  });
+
+  /** Экспорт дневника в Markdown-файл. */
+  function exportDiary() {
+    const md = diaryToMarkdown(diary, wordsByDay, {
+      title: tr('Читательский дневник'),
+      words: tr('Новые слова'),
+    });
+    const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `${tr('дневник-чтения')}.md`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
 
   // Метрики библиотеки по прогрессу чтения.
   const started = $derived($books.filter((b) => (b.progress ?? 0) > 0).length);
@@ -80,6 +110,37 @@
         </div>
       </section>
     {/if}
+
+    <section>
+      <div class="diary-head">
+        <h2>{$t('Читательский дневник')}</h2>
+        {#if diary.length}
+          <button class="ghost" onclick={exportDiary}>{$t('Экспорт в Markdown')}</button>
+        {/if}
+      </div>
+      {#if diary.length === 0}
+        <p class="note">{$t('Дневник заполнится сам, когда откроете книгу и почитаете.')}</p>
+      {:else}
+        {#each diary.slice(0, 30) as day (day.date)}
+          <div class="d-day">
+            <h3>{day.date}</h3>
+            <ul>
+              {#each day.items as it (it.bookId)}
+                <li>
+                  <span class="d-title">{it.title}</span>
+                  <span class="d-range">
+                    {it.fromPct === it.toPct ? `${it.toPct}%` : `${it.fromPct}% → ${it.toPct}%`}
+                  </span>
+                </li>
+              {/each}
+              {#if wordsByDay.get(day.date)}
+                <li class="d-words">{$t('Новые слова: {0}', wordsByDay.get(day.date))}</li>
+              {/if}
+            </ul>
+          </div>
+        {/each}
+      {/if}
+    </section>
   </div>
 </div>
 
@@ -158,5 +219,54 @@
   }
   .icon-btn:hover {
     background: var(--border);
+  }
+  .diary-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.6rem;
+  }
+  .ghost {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text);
+    padding: 0.35rem 0.8rem;
+    font-size: 0.85rem;
+    cursor: pointer;
+  }
+  .d-day {
+    margin-top: 0.6rem;
+    padding: 0.6rem 0.8rem;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--surface);
+  }
+  .d-day h3 {
+    margin: 0 0 0.3rem;
+    font-size: 0.85rem;
+    color: var(--muted);
+  }
+  .d-day ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .d-day li {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.6rem;
+    padding: 0.15rem 0;
+    color: var(--text);
+    font-size: 0.92rem;
+  }
+  .d-range {
+    color: var(--accent);
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .d-words {
+    color: var(--muted);
+    font-size: 0.85rem;
   }
 </style>

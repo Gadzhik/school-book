@@ -34,7 +34,7 @@
     type WordTapInfo,
     type SelectionInfo,
   } from '@reader/reader-engine';
-  import { readabilityScore, recordActivity, type Readability } from '@reader/core';
+  import { readabilityScore, recordActivity, recordDiary, type Readability } from '@reader/core';
   import { nativeTtsAvailable, nativeSpeak, nativeStop } from '@reader/adapters';
   import { view, goBack, settings, readerIsFixedLayout } from '../stores';
   import { toTypography } from '../theme';
@@ -43,7 +43,17 @@
   import SelectionHelper from './SelectionHelper.svelte';
   import BookmarksPanel from './BookmarksPanel.svelte';
   import HighlightPopover from './HighlightPopover.svelte';
+  import ClassNotePopover from './ClassNotePopover.svelte';
   import QuizPanel from './QuizPanel.svelte';
+  import {
+    fetchClassNotes,
+    shareToClass,
+    removeClassNote,
+    canShareToClass,
+    CLASS_NOTE_COLOR,
+  } from '../server/class-notes';
+  import { session } from '../server/auth';
+  import type { ClassNote } from '@reader/network';
   import { requestLlm } from './llm-consent';
   import { saveWord } from '../words/store';
   import { t, tr } from '../i18n';
@@ -100,6 +110,26 @@
   let highlights = $state<Highlight[]>([]);
   let activeHighlight = $state<Highlight | null>(null);
 
+  // Заметки учителя, видимые классу (по serverId книги).
+  let classNotes = $state<ClassNote[]>([]);
+  let activeClassNote = $state<ClassNote | null>(null);
+  // serverId книги реактивно (bookMeta — обычная переменная, ставится в onMount).
+  let serverBookId = $state<string | undefined>(undefined);
+  const canShare = $derived(
+    canShareToClass($session?.user.role) &&
+      $session?.user.status === 'active' &&
+      !!serverBookId,
+  );
+
+  /** Отрисовать в книге свои выделения + заметки учителя. */
+  async function applyHighlights() {
+    if (!controller) return;
+    await controller.setHighlights([
+      ...highlights.map((h) => ({ cfi: h.cfi, color: h.color })),
+      ...classNotes.map((n) => ({ cfi: n.cfi, color: n.color ?? CLASS_NOTE_COLOR })),
+    ]);
+  }
+
   // Квиз по главе (ТЗ Часть 6, E4)
   let quizText = $state<string | null>(null);
   async function startQuiz() {
@@ -125,11 +155,12 @@
   // PDF → перетекаемый текст
   let converting = $state(false);
 
-  // Масштаб PDF/CBZ поверх вписывания (сброс — при открытии другой книги).
+  // Масштаб PDF/CBZ поверх вписывания. Запоминается на книгу (meta.zoomPct).
   let zoomPct = $state(100);
   function setZoomPct(pct: number) {
     zoomPct = Math.min(300, Math.max(50, pct));
     controller?.setZoomFactor(zoomPct / 100);
+    if (bookMeta) void updateBook(bookId, { zoomPct });
   }
   let convProgress = $state<{ done: number; total: number } | null>(null);
   let convStatus = $state('');
@@ -259,6 +290,8 @@
     lastLocator = loc.cfi;
     currentLocator = loc.cfi;
     void saveProgress(bookId, loc.fraction, loc.cfi);
+    // Читательский дневник: «сегодня читал эту книгу с N% до M%».
+    if (bookMeta) recordDiary(bookId, bookMeta.title, loc.fraction);
     // Синхронизация прогресса с сервером (если книга оттуда; троттлинг внутри).
     if (bookMeta) void pushProgress(bookMeta, loc.fraction, loc.cfi);
   }
@@ -300,10 +333,18 @@
       const remoteLocator = await pullProgress(meta);
       await controller.open(file, remoteLocator ?? meta.locator);
       readerIsFixedLayout.set(controller.isFixedLayout);
+      // Восстановить сохранённый масштаб книги (PDF/CBZ).
+      if (controller.isFixedLayout && meta.zoomPct && meta.zoomPct !== 100) {
+        zoomPct = Math.min(300, Math.max(50, meta.zoomPct));
+        controller.setZoomFactor(zoomPct / 100);
+      }
       await refreshBookmarks();
       await refreshHighlights();
-      // Отрисовать сохранённые выделения в книге.
-      await controller.setHighlights(highlights.map((h) => ({ cfi: h.cfi, color: h.color })));
+      // Заметки учителя (если книга с сервера и есть аккаунт) — тихо при офлайне.
+      serverBookId = meta.serverId;
+      if (meta.serverId && $session) classNotes = await fetchClassNotes(meta.serverId);
+      // Отрисовать сохранённые выделения + заметки учителя в книге.
+      await applyHighlights();
       nativeAvail = await nativeTtsAvailable();
       canSpeak = controller.canSpeak || nativeAvail;
       controller.setTypography(toTypography($settings));
@@ -413,10 +454,47 @@
     await refreshHighlights();
   }
 
-  /** Клик по подсветке в книге — открыть заметку/удаление. */
+  /** Клик по подсветке в книге — своё выделение или заметка учителя. */
   async function openHighlight(cfi: string) {
     const h = await getHighlightByCfi(bookId, cfi);
-    if (h) activeHighlight = h;
+    if (h) {
+      activeHighlight = h;
+      return;
+    }
+    activeClassNote = classNotes.find((n) => n.cfi === cfi) ?? null;
+  }
+
+  /** Учитель: показать выделение с заметкой ученикам класса. */
+  async function shareHighlight(note: string) {
+    if (!activeHighlight || !bookMeta?.serverId) return;
+    if (note !== (activeHighlight.note ?? '')) {
+      await setHighlightNote(activeHighlight.id, note);
+    }
+    const err = await shareToClass(bookMeta.serverId, {
+      cfi: activeHighlight.cfi,
+      text: activeHighlight.text,
+      note: note || undefined,
+    });
+    activeHighlight = null;
+    if (err) {
+      alert(tr(err));
+      return;
+    }
+    await refreshHighlights();
+    classNotes = await fetchClassNotes(bookMeta.serverId);
+    await applyHighlights();
+  }
+
+  /** Учитель/автор: убрать заметку у класса. */
+  async function deleteClassNote() {
+    if (!activeClassNote || !bookMeta?.serverId) return;
+    const cfi = activeClassNote.cfi;
+    await removeClassNote(activeClassNote.id);
+    activeClassNote = null;
+    classNotes = await fetchClassNotes(bookMeta.serverId);
+    // Перерисовать: убрать подсветку, если её больше нет.
+    await controller?.removeHighlight(cfi);
+    await applyHighlights();
   }
 
   /** Открыть выделение из списка по id. */
@@ -694,6 +772,19 @@
       onsave={saveHighlightNote}
       onremove={deleteHighlight}
       onclose={() => (activeHighlight = null)}
+      onshare={canShare ? shareHighlight : undefined}
+    />
+  {/if}
+
+  {#if activeClassNote}
+    <ClassNotePopover
+      note={activeClassNote}
+      canRemove={canShare &&
+        ($session?.user.id === activeClassNote.createdBy ||
+          $session?.user.role === 'admin' ||
+          $session?.user.role === 'power')}
+      onremove={deleteClassNote}
+      onclose={() => (activeClassNote = null)}
     />
   {/if}
 

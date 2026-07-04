@@ -620,8 +620,86 @@ export const en: Record<string, string> = {
   'OPDS: некорректный XML': 'OPDS: malformed XML',
   'OPDS: ожидался Atom <feed>': 'OPDS: expected an Atom <feed>',
 
+  // — Сжатие PDF при загрузке —
+  'Сжать PDF перед загрузкой (без потери качества)': 'Compress PDF before uploading (lossless)',
+  'Сжатие PDF…': 'Compressing PDF…',
+  'Сжато: {0} МБ → {1} МБ.': 'Compressed: {0} MB → {1} MB.',
+  'PDF уже оптимален — сжатие не уменьшило файл.':
+    'The PDF is already optimal — compression did not shrink it.',
+  'Сжать не удалось — загружаю исходный файл.': 'Compression failed — uploading the original file.',
+
   // — Масштаб PDF/CBZ —
   'Уменьшить масштаб': 'Zoom out',
   'Увеличить масштаб': 'Zoom in',
   'Масштаб; нажмите, чтобы сбросить': 'Zoom; click to reset',
+
+  // — Заметки учителя классу —
+  'Заметка учителя': "Teacher's note",
+  'Учитель отметил этот фрагмент.': 'The teacher marked this passage.',
+  'Убрать у класса': 'Remove for the class',
+  'Классу': 'To class',
+  'Показать это выделение и заметку ученикам класса':
+    'Show this highlight and note to the students of your class',
+  'Не удалось опубликовать заметку': 'Failed to publish the note',
+
+  // — Панель класса —
+  'Прогресс класса': 'Class progress',
+  'Не удалось загрузить прогресс класса': "Failed to load the class's progress",
+  'Пока нет данных: ученики ещё не читали книги с сервера.':
+    'No data yet: students have not read server books.',
+  'Прогресс, %': 'Progress, %',
+  'Обновлено': 'Updated',
+  'Скрыть класс': 'Hide class',
+  'Мой класс': 'My class',
+
+  // — Квизы от учителя —
+  'Квизы': 'Quizzes',
+  'Скрыть квизы': 'Hide quizzes',
+  'Не удалось загрузить квизы': 'Failed to load quizzes',
+  'Название квиза': 'Quiz title',
+  'Без книги': 'No book',
+  'Текст вопроса': 'Question text',
+  'Удалить вопрос': 'Delete question',
+  'Вариант {0}': 'Option {0}',
+  'Удалить вариант': 'Delete option',
+  '+ Вариант': '+ Option',
+  '+ Вопрос': '+ Question',
+  'Точка — правильный ответ': 'Dot marks the correct answer',
+  'Правильный ответ': 'Correct answer',
+  'Создать квиз': 'Create quiz',
+  'Не удалось создать квиз': 'Failed to create the quiz',
+  'Удалить квиз вместе с результатами учеников?':
+    "Delete the quiz together with students' results?",
+  'Квизов пока нет.': 'No quizzes yet.',
+  '{0} вопр.': '{0} q.',
+  'Мой балл: {0}/{1}': 'My score: {0}/{1}',
+  'Пересдать': 'Retake',
+  'Пройти': 'Take',
+  'Скрыть результаты': 'Hide results',
+  'Результаты': 'Results',
+  'Никто ещё не проходил.': 'Nobody has taken it yet.',
+  'Отправить ответы': 'Submit answers',
+  'Проверка…': 'Checking…',
+  'Не удалось отправить ответы': 'Failed to submit answers',
+
+  // — Офлайн-словарь (пак с сервера) —
+  'Офлайн-словарь': 'Offline dictionary',
+  'Словарь установлен: {0} слов. Работает без сети.':
+    'Dictionary installed: {0} words. Works offline.',
+  'Скачайте словарь с сервера школы один раз — определения слов будут работать без сети.':
+    'Download the dictionary from the school server once — word definitions will work offline.',
+  'Обновить словарь': 'Update dictionary',
+  'Скачать словарь с сервера': 'Download dictionary from server',
+  'Готово: {0} слов доступно офлайн.': 'Done: {0} words available offline.',
+  'Не удалось скачать словарь': 'Failed to download the dictionary',
+  'Хранилище недоступно (OPFS)': 'Storage unavailable (OPFS)',
+  'На сервере нет словаря для этого языка': 'The server has no dictionary for this language',
+
+  // — Читательский дневник —
+  'Читательский дневник': 'Reading diary',
+  'Дневник заполнится сам, когда откроете книгу и почитаете.':
+    'The diary fills itself in once you open a book and read.',
+  'Новые слова: {0}': 'New words: {0}',
+  'Новые слова': 'New words',
+  'дневник-чтения': 'reading-diary',
 };

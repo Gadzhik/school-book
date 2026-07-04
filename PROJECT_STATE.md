@@ -456,3 +456,49 @@
   Масштаб живёт в рамках сессии книги (не персистится — намеренно).
   svelte-check 0/0. На реальном тач-устройстве панорамирование не гонялось —
   проверить на эмуляторе/телефоне после следующего билда.
+- **2026-07-04 (Windows): большой пакет для школы — панель класса, заметки
+  учителя, квизы, дневник, сжатие PDF, словарь-пак; аудит прав.**
+  (1) **Аудит прав сервера:** модель систематична (current_user → status Active
+  → роль; can_see/can_manage_class/can_assign_role; download отдаёт 404 на
+  невидимое; progress/words/marks скоупятся JWT сервером — подделать user_id
+  нельзя; WS изолирован по скоупу). Найдена и закрыта дыра: `/books/{id}/cover`
+  не проверял can_see → утекали обложки скрытых книг; теперь cover принимает
+  JWT в query (как WS), проверяет can_see, 404 на чужое; клиентский coverUrl
+  шлёт JWT вместо кода пэйринга. Мелочь (осознанно оставлено): заблокированный
+  с валидным JWT видит public-книги, как аноним.
+  (2) **Сжатие учебника (ручное):** `compressPdf` в @reader/converters — mupdf
+  `saveToBuffer('garbage=4,compress,compress-images,compress-fonts')`, БЕЗ
+  потери качества (структурная очистка, картинки не пережимаются в lossy).
+  Галочка «Сжать PDF перед загрузкой» в BookUpload (форму видят только
+  teacher/power/admin — canUpload). Если не уменьшилось — грузится оригинал.
+  (3) **Панель класса:** GET /api/class/{id}/progress (права can_manage_class;
+  агрегат MAX(updated_at) по устройствам из progress) + ClassProgressPanel
+  (кнопка «Мой класс» на ServerScreen): группировка по ученикам, прогресс-бары,
+  экспорт CSV (BOM+«;» для Excel).
+  (4) **Заметки учителя классу:** таблица class_notes (строка на класс),
+  GET/POST /api/class-notes (+DELETE, удаляет все строки одной публикации по
+  created_by+book_id+cfi); видимость: ученик — его классы, учитель — свои+
+  ведёт, admin/power — все; дедуп в выдаче. Клиент: у выделения кнопка
+  «Классу» (HighlightPopover.onshare, только teacher+ и book.serverId; admin
+  без классов публикует всем классам справочника); заметки рендерятся голубой
+  подсветкой (CLASS_NOTE_COLOR) поверх своих; клик — ClassNotePopover (автор,
+  текст, «Убрать у класса» для автора/админа). Reader: applyHighlights()
+  объединяет свои+классные.
+  (5) **Квизы от учителя:** таблицы quizzes (questions JSON) + quiz_results;
+  API list/create/delete/result/results. Ученику вопросы отдаются БЕЗ поля
+  correct — проверка только на сервере (POST result возвращает score+разбор
+  per_question). QuizzesPanel на ServerScreen (кнопка «Квизы»): учитель —
+  конструктор (2–6 вариантов, точка = правильный), результаты класса,
+  удаление; ученик — прохождение в модалке, пересдача разрешена.
+  (6) **Читательский дневник:** core/diary.ts (localStorage `reader:diary`,
+  до 366 дней): recordDiary из onRelocate — за день диапазон «с N% до M%» по
+  каждой книге. Секция в ReportScreen + «Новые слова: K» (из words.addedAt) +
+  экспорт Markdown.
+  (7) **Офлайн-словарь (пак):** сервер GET /api/dict/{lang} ←
+  `library/_dict/<lang>.json[.gz]` (кладёт админ; формат {"слово":"опред."}).
+  Клиент: server/dictionary-pack.ts — скачивание в OPFS (dict/<lang>.json),
+  registerDictionary при старте (лениво из WordPopover); кнопка в настройках
+  («Офлайн-словарь»). Данных пака в репо НЕТ — только инфраструктура.
+  Проверки: svelte-check 0/0 (576 файлов), cargo check+test 12/12, vitest
+  19/19, en.ts 599 ключей без дублей. E2E по новым фичам не гонялся —
+  проверить клиент-сервер на живом сервере (skill run-server) и на устройстве.

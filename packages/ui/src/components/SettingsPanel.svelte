@@ -7,13 +7,46 @@
     ColumnCount,
   } from '@reader/core';
   import { settings, patchSettings, readerIsFixedLayout } from '../stores';
-  import { t, locale, setLocale } from '../i18n';
+  import { t, tr, locale, setLocale } from '../i18n';
   import Icon from './Icon.svelte';
 
   interface Props {
     onclose: () => void;
   }
   const { onclose }: Props = $props();
+
+  // Офлайн-словарь: пак с сервера школы (server/dictionary-pack).
+  let dictInstalled = $state(0);
+  let dictBusy = $state(false);
+  let dictMsg = $state('');
+  void import('../server/dictionary-pack').then(async (m) => {
+    const sizes = await m.installedPackSizes();
+    dictInstalled = Object.values(sizes).reduce((a, b) => a + b, 0);
+  });
+  async function downloadDict() {
+    if (dictBusy) return;
+    dictBusy = true;
+    dictMsg = '';
+    try {
+      const m = await import('../server/dictionary-pack');
+      const uiLang = document.documentElement.lang === 'en' ? 'en' : 'ru';
+      // Основной пак — русский; при английском UI дополнительно пробуем en.
+      let total = await m.downloadDictionaryPack('ru');
+      if (uiLang === 'en') {
+        try {
+          total += await m.downloadDictionaryPack('en');
+        } catch {
+          /* en-пака может не быть — ок */
+        }
+      }
+      dictInstalled = total;
+      dictMsg = tr('Готово: {0} слов доступно офлайн.', total);
+    } catch (e) {
+      dictMsg = e instanceof Error ? e.message : tr('Не удалось скачать словарь');
+    } finally {
+      dictBusy = false;
+    }
+  }
 
   // Метки — русские ключи словаря, переводятся при выводе через $t.
   const themes: { value: ThemeName; label: string }[] = [
@@ -359,6 +392,25 @@
         'pandoc (DOCX/RTF/ODT/HTML/MD→EPUB) точнее, но тяжёлый: ~58 МБ загрузятся при первом использовании. Встроенный — быстрый и лёгкий.',
       )}
     </p>
+  </section>
+
+  <section>
+    <h3>{$t('Офлайн-словарь')}</h3>
+    <p class="hint">
+      {#if dictInstalled}
+        {$t('Словарь установлен: {0} слов. Работает без сети.', dictInstalled)}
+      {:else}
+        {$t('Скачайте словарь с сервера школы один раз — определения слов будут работать без сети.')}
+      {/if}
+    </p>
+    <button class="chip" onclick={downloadDict} disabled={dictBusy}>
+      {dictBusy
+        ? $t('Скачивание…')
+        : dictInstalled
+          ? $t('Обновить словарь')
+          : $t('Скачать словарь с сервера')}
+    </button>
+    {#if dictMsg}<p class="hint">{dictMsg}</p>{/if}
   </section>
 </aside>
 

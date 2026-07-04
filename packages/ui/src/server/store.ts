@@ -112,7 +112,10 @@ export function coverUrl(entry: OpdsEntry): string | null {
   const conn = get(connection);
   if (!entry.coverHref || !cat || !conn) return null;
   let url = resolveHref(entry.coverHref, cat.url);
-  if (conn.token) url += `${url.includes('?') ? '&' : '?'}token=${encodeURIComponent(conn.token)}`;
+  // JWT приоритетнее кода пэйринга: сервер по нему проверяет видимость книги
+  // (can_see) — иначе вошедший пользователь не увидел бы обложек своих книг.
+  const token = get(authToken) ?? conn.token;
+  if (token) url += `${url.includes('?') ? '&' : '?'}token=${encodeURIComponent(token)}`;
   return url;
 }
 
