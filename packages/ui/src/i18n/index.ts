@@ -31,13 +31,27 @@ function loadLocale(): Locale {
 /** Текущий язык интерфейса. */
 export const locale = writable<Locale>(loadLocale());
 
+/** Название приложения — ключ словаря, им же подписаны окно и вкладка. */
+const APP_TITLE = 'Читалка для школьников';
+
 locale.subscribe((l) => {
   try {
     localStorage.setItem(LOCALE_KEY, l);
   } catch {
     /* ок */
   }
-  if (typeof document !== 'undefined') document.documentElement.lang = l;
+  if (typeof document === 'undefined') return;
+  document.documentElement.lang = l;
+  const title = l === 'en' ? (en[APP_TITLE] ?? APP_TITLE) : APP_TITLE;
+  document.title = title; // вкладка браузера / PWA
+  try {
+    // Десктоп Tauri: заголовок нативного окна. На вебе/мобильном __TAURI__
+    // отсутствует или заголовка нет — тихо пропускаем.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    void (window as any).__TAURI__?.window?.getCurrentWindow?.()?.setTitle?.(title);
+  } catch {
+    /* ок */
+  }
 });
 
 /** Сменить язык интерфейса. */

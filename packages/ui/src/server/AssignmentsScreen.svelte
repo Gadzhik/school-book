@@ -97,7 +97,7 @@
       <select bind:value={classId}>
         <option value="" disabled>{$t('Класс…')}</option>
         {#each myClasses as c (c.id)}
-          <option value={c.id}>{c.label}</option>
+          <option value={c.id}>{$t(c.label)}</option>
         {/each}
       </select>
       <input type="text" bind:value={title} placeholder={$t('Название (необязательно)')} />
@@ -116,7 +116,7 @@
         <li>
           <div class="row">
             <span class="a-title">{a.title}</span>
-            <span class="muted">{a.bookTitle} · {classLabel(a.classId)}</span>
+            <span class="muted">{a.bookTitle} · {$t(classLabel(a.classId))}</span>
             {#if a.dueAt}<span class="due">{fmtDue(a.dueAt)}</span>{/if}
             <span class="spacer"></span>
 

@@ -212,7 +212,7 @@
       <select bind:value={klass}>
         <option value="" disabled>{$t('Выберите класс')}</option>
         {#each classes as c (c.id)}
-          <option value={c.id}>{c.label}</option>
+          <option value={c.id}>{$t(c.label)}</option>
         {/each}
       </select>
     </label>
@@ -229,7 +229,7 @@
             class:on={pickedSubjects.includes(s.id)}
             onclick={() => (pickedSubjects = toggle(pickedSubjects, s.id))}
           >
-            {s.name}
+            {$t(s.name)}
           </button>
         {/each}
       </div>
@@ -244,7 +244,7 @@
             class:on={pickedClasses.includes(c.id)}
             onclick={() => (pickedClasses = toggle(pickedClasses, c.id))}
           >
-            {c.label}
+            {$t(c.label)}
           </button>
         {/each}
       </div>
