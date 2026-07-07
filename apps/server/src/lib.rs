@@ -18,6 +18,7 @@ mod auth;
 mod autotag;
 mod backup;
 mod db;
+pub mod logging;
 mod mdns;
 mod metadata;
 mod models;
@@ -244,6 +245,8 @@ fn build_router(state: Arc<AppState>, web_dir: Option<PathBuf>) -> Router {
             "/api/restore",
             post(restore_db).layer(DefaultBodyLimit::max(512 * 1024 * 1024)),
         )
+        // Уровень логирования сервера (админ): посмотреть/сменить на лету.
+        .route("/api/log-level", get(get_log_level).put(put_log_level))
         .route("/api/bookmarks", get(get_bookmarks).post(post_bookmarks))
         .route("/api/highlights", get(get_highlights).post(post_highlights))
         // Обновления приложения: манифест и файлы публичны (скачивание APK/
@@ -271,7 +274,22 @@ fn build_router(state: Arc<AppState>, web_dir: Option<PathBuf>) -> Router {
         // CORS — внешний слой: обрабатывает preflight до авторизации,
         // чтобы веб-клиент (другой origin) мог обращаться к серверу.
         .layer(CorsLayer::permissive())
-        .layer(TraceLayer::new_for_http())
+        // Журнал HTTP: на уровне debug — каждый запрос (метод/путь/статус/
+        // латентность), на verbose (trace) — ещё и момент начала обработки.
+        .layer(
+            TraceLayer::new_for_http()
+                .make_span_with(
+                    tower_http::trace::DefaultMakeSpan::new().level(tracing::Level::DEBUG),
+                )
+                .on_request(
+                    tower_http::trace::DefaultOnRequest::new().level(tracing::Level::TRACE),
+                )
+                .on_response(
+                    tower_http::trace::DefaultOnResponse::new()
+                        .level(tracing::Level::DEBUG)
+                        .latency_unit(tower_http::LatencyUnit::Millis),
+                ),
+        )
 }
 
 /// Создать встроенного администратора, если в БД нет ни одного активного админа.
@@ -317,6 +335,19 @@ pub async fn start(cfg: Config) -> std::io::Result<ServerHandle> {
     std::fs::create_dir_all(&cfg.library).ok();
     let db = Db::open(&cfg.db_path)
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("БД: {e}")))?;
+
+    // Сохранённый админом уровень логирования (meta.log_level) применяем сразу
+    // после открытия БД — чтобы и стартовые записи шли уже с нужным уровнем.
+    // RUST_LOG, заданный руками, главнее (отладка разработчиком).
+    if !logging::env_override_active() {
+        if let Some(level) = db.meta_get("log_level") {
+            match logging::apply_level(&level) {
+                Ok(()) => tracing::debug!("уровень логирования из настроек: {level}"),
+                Err(e) => tracing::warn!("не удалось применить уровень «{level}»: {e}"),
+            }
+        }
+    }
+
     match db.scan_library(&cfg.library) {
         Ok(n) => tracing::info!("каталог: добавлено {n} книг из {}", cfg.library.display()),
         Err(e) => tracing::warn!("сканирование библиотеки не удалось: {e}"),
@@ -379,7 +410,7 @@ pub async fn start(cfg: Config) -> std::io::Result<ServerHandle> {
             tick.tick().await;
             match rescan_state.db.scan_library(&rescan_lib) {
                 Ok(n) if n > 0 => tracing::info!("рескан: добавлено {n} новых книг"),
-                Ok(_) => {}
+                Ok(_) => tracing::trace!("рескан: новых книг нет"),
                 Err(e) => tracing::warn!("периодический рескан не удался: {e}"),
             }
         }
@@ -393,6 +424,10 @@ pub async fn start(cfg: Config) -> std::io::Result<ServerHandle> {
         loop {
             let s = backup::load_settings(&ab_state.db);
             let delay = backup::next_delay(&ab_state.db, &s);
+            match &delay {
+                Some(d) => tracing::debug!("автобэкап: следующий запуск через {} с", d.as_secs()),
+                None => tracing::debug!("автобэкап выключен — жду изменения настроек"),
+            }
             tokio::select! {
                 // Настройки изменились — пересчитать расписание.
                 _ = ab_state.backup_notify.notified() => continue,
@@ -653,12 +688,15 @@ async fn login(State(st): State<Arc<AppState>>, Json(req): Json<LoginReq>) -> Re
         Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     };
     if !auth::verify_password(&req.password, &user.pw_hash) {
+        tracing::debug!("вход отклонён (неверный пароль): {}", user.login);
         return (StatusCode::UNAUTHORIZED, "Неверный логин или пароль").into_response();
     }
     if user.status == UserStatus::Blocked {
+        tracing::debug!("вход отклонён (заблокирован): {}", user.login);
         return (StatusCode::FORBIDDEN, "Учётная запись заблокирована").into_response();
     }
     let token = auth::issue_token(&st.jwt_secret, &user.id, user.role).unwrap_or_default();
+    tracing::debug!("вход: {} ({:?})", user.login, user.role);
     Json(AuthResponse { token, user: user.public() }).into_response()
 }
 
@@ -1567,6 +1605,62 @@ async fn restore_db(
     }
 }
 
+// --- Уровень логирования (админ) ---
+
+/// Текущий уровень логирования и список допустимых.
+async fn get_log_level(State(st): State<Arc<AppState>>, headers: HeaderMap) -> Response {
+    if let Err(r) = require_admin(&st, &headers) {
+        return r;
+    }
+    let level = st.db.meta_get("log_level").unwrap_or_else(|| "info".to_string());
+    Json(serde_json::json!({
+        "level": level,
+        "levels": logging::LEVELS,
+        // RUST_LOG задан руками — сохранённый уровень при старте игнорируется.
+        "envOverride": logging::env_override_active(),
+    }))
+    .into_response()
+}
+
+#[derive(Deserialize)]
+struct LogLevelReq {
+    level: String,
+}
+
+/// Сменить уровень логирования: применяется сразу и сохраняется в БД
+/// (переживает перезапуск). По умолчанию — info.
+async fn put_log_level(
+    State(st): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Json(req): Json<LogLevelReq>,
+) -> Response {
+    let me = match require_admin(&st, &headers) {
+        Ok(u) => u,
+        Err(r) => return r,
+    };
+    let level = req.level.trim().to_lowercase();
+    if logging::filter_for(&level).is_none() {
+        return (
+            StatusCode::BAD_REQUEST,
+            format!("уровень должен быть одним из: {}", logging::LEVELS.join(", ")),
+        )
+            .into_response();
+    }
+    if st.db.meta_set("log_level", &level).is_err() {
+        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    }
+    // Смена на лету. Не фатально, если подписчик не наш (встраивание в десктоп)
+    // — уровень сохранён и применится там, где логированием владеет сервер.
+    if let Err(e) = logging::apply_level(&level) {
+        tracing::warn!("уровень «{level}» сохранён, но не применён: {e}");
+    } else {
+        tracing::info!("уровень логирования: {level}");
+    }
+    st.db
+        .log_audit(&me.full_name, "log_level", &format!("уровень логирования: {level}"));
+    StatusCode::NO_CONTENT.into_response()
+}
+
 // --- Задания (ТЗ Часть 6, п.6.5) ---
 
 /// Может ли пользователь распоряжаться заданиями данного класса.
@@ -1908,11 +2002,13 @@ async fn download(State(st): State<Arc<AppState>>, Path(id): Path<String>, req: 
         .unwrap_or(false);
     if !allowed {
         // 404 (не 403), чтобы не раскрывать существование скрытой книги.
+        tracing::debug!("скачивание отклонено (нет доступа/книги): {id}");
         return StatusCode::NOT_FOUND.into_response();
     }
     let Ok(Some(path)) = st.db.book_path(&id) else {
         return StatusCode::NOT_FOUND.into_response();
     };
+    tracing::debug!("скачивание книги {id}");
     // ServeFile сам обрабатывает Range и заголовки кэширования.
     match ServeFile::new(path).oneshot(req).await {
         Ok(res) => res.map(Body::new),
@@ -2007,6 +2103,12 @@ async fn put_progress(
     p.user_id = if scope.is_empty() { None } else { Some(scope.clone()) };
     match st.db.upsert_progress(&scope, &p) {
         Ok(()) => {
+            tracing::trace!(
+                "прогресс: книга {} устройство {} {:.1}%",
+                p.book_id,
+                p.device_id,
+                p.progress * 100.0
+            );
             // Живая рассылка другим устройствам («продолжить везде», ТЗ 4.9.4) —
             // только сокетам того же аккаунта (или legacy-сокетам для scope='').
             if let Ok(json) = serde_json::to_string(&p) {
@@ -2092,6 +2194,10 @@ async fn ws_handler(
         }
     };
     let rx = st.progress_tx.subscribe();
+    tracing::debug!(
+        "WS-подключение (скоуп: {})",
+        scope.as_deref().unwrap_or("legacy")
+    );
     ws.on_upgrade(move |socket| ws_loop(socket, rx, scope))
 }
 
