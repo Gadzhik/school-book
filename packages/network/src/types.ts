@@ -187,6 +187,17 @@ export interface BackupFile {
   modifiedMs: number;
 }
 
+/** Уровень логирования сервера (лестница: каждый включает предыдущие). */
+export type LogLevel = 'error' | 'warn' | 'info' | 'debug' | 'verbose';
+
+/** Текущий уровень логирования сервера. */
+export interface LogLevelInfo {
+  level: LogLevel;
+  levels: LogLevel[];
+  /** true — на сервере задан RUST_LOG, при старте он главнее настройки. */
+  envOverride: boolean;
+}
+
 /** Строка сводного прогресса класса: ученик × книга. */
 export interface ClassProgressRow {
   userId: string;

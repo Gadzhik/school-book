@@ -25,6 +25,8 @@ import type {
   BackupSettingsInfo,
   BookmarkSyncItem,
   HighlightSyncItem,
+  LogLevel,
+  LogLevelInfo,
   UpdateInfo,
   ClassProgressRow,
   ClassNote,
@@ -483,6 +485,17 @@ export class LibraryServerClient {
   async listBackups(): Promise<BackupFile[]> {
     const res = await this.#fetch('/api/backup/list');
     return (await res.json()) as BackupFile[];
+  }
+
+  /** Текущий уровень логирования сервера (админ). */
+  async getLogLevel(): Promise<LogLevelInfo> {
+    const res = await this.#fetch('/api/log-level');
+    return (await res.json()) as LogLevelInfo;
+  }
+
+  /** Сменить уровень логирования сервера (применяется сразу, админ). */
+  async setLogLevel(level: LogLevel): Promise<void> {
+    await this.#postJson<void>('/api/log-level', { level }, 'PUT');
   }
 
   /**

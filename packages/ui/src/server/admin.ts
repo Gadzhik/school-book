@@ -9,6 +9,8 @@ import type {
   BackupSettings,
   BackupSettingsInfo,
   BackupFile,
+  LogLevel,
+  LogLevelInfo,
 } from '@reader/network';
 import { authedClient, session } from './auth';
 import { tr } from '../i18n';
@@ -132,6 +134,43 @@ export async function downloadFullBackup(): Promise<void> {
     const blob = await c.backupFull();
     saveBlob(blob, `chitalka-full-backup-${new Date().toISOString().slice(0, 10)}.zip`);
   });
+}
+
+// --- Уровень логирования сервера (админ) ---
+
+export const logLevelInfo = writable<LogLevelInfo | null>(null);
+export const logLevelBusy = writable(false);
+export const logLevelError = writable('');
+
+/** Загрузить текущий уровень логирования сервера. */
+export async function loadLogLevel(): Promise<void> {
+  const c = authedClient();
+  if (!c || !canBackup(get(session)?.user.role)) return;
+  logLevelBusy.set(true);
+  logLevelError.set('');
+  try {
+    logLevelInfo.set(await c.getLogLevel());
+  } catch (e) {
+    logLevelError.set(e instanceof Error ? e.message : tr('Операция не удалась'));
+  } finally {
+    logLevelBusy.set(false);
+  }
+}
+
+/** Сменить уровень логирования (применяется на сервере сразу). */
+export async function changeLogLevel(level: LogLevel): Promise<void> {
+  const c = authedClient();
+  if (!c || !canBackup(get(session)?.user.role)) return;
+  logLevelBusy.set(true);
+  logLevelError.set('');
+  try {
+    await c.setLogLevel(level);
+    logLevelInfo.set(await c.getLogLevel());
+  } catch (e) {
+    logLevelError.set(e instanceof Error ? e.message : tr('Операция не удалась'));
+  } finally {
+    logLevelBusy.set(false);
+  }
 }
 
 /** Восстановить БД сервера из выбранного файла .db. */

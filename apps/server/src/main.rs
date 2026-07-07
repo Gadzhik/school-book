@@ -6,12 +6,9 @@ use chitalka_server::{start, shutdown_signal, Config};
 
 #[tokio::main]
 async fn main() {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info,tower_http=info")),
-        )
-        .init();
+    // Уровень переключается админом на лету (/api/log-level); RUST_LOG,
+    // если задан, имеет высший приоритет. По умолчанию — info.
+    chitalka_server::logging::init_logging();
 
     let handle = match start(Config::from_env()).await {
         Ok(h) => h,

@@ -738,4 +738,21 @@ export const en: Record<string, string> = {
   'КБ': 'KB',
   'настройки бэкапа': 'backup settings',
   'восстановление БД': 'database restore',
+
+  // — Логи сервера (админ) —
+  'Логи сервера': 'Server logs',
+  'Уровень подробности': 'Verbosity level',
+  'по умолчанию': 'default',
+  'уровень логов': 'log level',
+  'только сбои и ошибки': 'failures and errors only',
+  '+ предупреждения (что-то пошло не так, но сервер работает)':
+    '+ warnings (something went wrong, but the server keeps running)',
+  '+ основные события: старт, бэкапы, найденные книги (рекомендуется)':
+    '+ key events: startup, backups, discovered books (recommended)',
+  '+ каждый запрос, входы пользователей, ход задач':
+    '+ every request, user logins, task progress',
+  '+ максимальная детализация (для глубокой диагностики, много записей)':
+    '+ maximum detail (for deep diagnostics, very chatty)',
+  'На сервере задан RUST_LOG — при перезапуске он главнее этой настройки.':
+    'RUST_LOG is set on the server — it takes precedence over this setting on restart.',
 };
