@@ -598,6 +598,7 @@ version = "0.0.0"
 dependencies = [
  "argon2",
  "axum",
+ "chrono",
  "encoding_rs",
  "jsonwebtoken",
  "mdns-sd",
@@ -607,6 +608,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+ "tokio-util",
  "tower",
  "tower-http",
  "tracing",
