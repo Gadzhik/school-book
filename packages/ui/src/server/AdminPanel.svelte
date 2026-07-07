@@ -2,15 +2,9 @@
   /** Администрирование (ТЗ Часть 6, E8+E9): журнал действий + резервная копия. */
   import { onMount } from 'svelte';
   import { session } from './auth';
-  import {
-    auditEntries,
-    adminBusy,
-    adminError,
-    canBackup,
-    loadAudit,
-    downloadBackup,
-  } from './admin';
+  import { auditEntries, adminBusy, adminError, canBackup, loadAudit } from './admin';
   import UsersPanel from './UsersPanel.svelte';
+  import BackupPanel from './BackupPanel.svelte';
   import { t, locale } from '../i18n';
 
   const ACTION_LABEL: Record<string, string> = {
@@ -21,6 +15,8 @@
     assign: 'назначено задание',
     unassign: 'удалено задание',
     backup: 'резервная копия',
+    backup_settings: 'настройки бэкапа',
+    restore: 'восстановление БД',
     create_user: 'создан пользователь',
     set_role: 'смена роли',
     delete_user: 'удалён пользователь',
@@ -36,15 +32,15 @@
 <!-- Управление пользователями (создать/роли/блок/удаление) — admin/power. -->
 <UsersPanel />
 
+<!-- Резервные копии: автобэкап, скачивание, восстановление — только админ. -->
+{#if canBackup($session?.user.role)}
+  <BackupPanel />
+{/if}
+
 <section class="admin">
   <div class="bar">
     <h2>{$t('Журнал действий')}</h2>
     <button class="ghost sm" onclick={loadAudit} disabled={$adminBusy}>{$t('Обновить')}</button>
-    {#if canBackup($session?.user.role)}
-      <button class="primary sm" onclick={downloadBackup} disabled={$adminBusy}>
-        {$t('Скачать резервную копию')}
-      </button>
-    {/if}
   </div>
   {#if $adminError}<p class="error">{$t($adminError)}</p>{/if}
 
@@ -113,16 +109,6 @@
   .muted {
     color: var(--muted);
   }
-  .primary {
-    border: none;
-    border-radius: 8px;
-    background: var(--accent);
-    color: var(--on-accent);
-    padding: 0.3rem 0.7rem;
-    font-size: 0.85rem;
-    font-weight: 600;
-    cursor: pointer;
-  }
   .ghost {
     border: 1px solid var(--border);
     border-radius: 8px;
@@ -132,7 +118,6 @@
     font-size: 0.85rem;
     cursor: pointer;
   }
-  .primary:disabled,
   .ghost:disabled {
     opacity: 0.6;
     cursor: default;

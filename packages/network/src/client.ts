@@ -20,6 +20,9 @@ import type {
   AssignmentInput,
   AssignmentReportRow,
   AuditEntry,
+  BackupFile,
+  BackupSettings,
+  BackupSettingsInfo,
   BookmarkSyncItem,
   HighlightSyncItem,
   UpdateInfo,
@@ -91,7 +94,7 @@ export class LibraryServerClient {
    * POST с JSON-телом; при ошибке поднимает сообщение из тела ответа сервера
    * (например «Логин уже занят»). Для регистрации/входа.
    */
-  async #postJson<T>(path: string, body: unknown): Promise<T> {
+  async #postJson<T>(path: string, body: unknown, method: 'POST' | 'PUT' = 'POST'): Promise<T> {
     const url = /^https?:\/\//i.test(path) ? path : `${this.baseUrl}${path}`;
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), this.#timeoutMs);
@@ -99,7 +102,7 @@ export class LibraryServerClient {
       let res: Response;
       try {
         res = await fetch(url, {
-          method: 'POST',
+          method,
           signal: ctrl.signal,
           headers: this.#headers({ 'Content-Type': 'application/json' }),
           body: JSON.stringify(body),
@@ -111,6 +114,8 @@ export class LibraryServerClient {
         const msg = (await res.text().catch(() => '')).trim();
         throw new HttpError(res.status, msg || `Сервер ответил ${res.status}`);
       }
+      // 204 No Content — тела нет (например, сохранение настроек).
+      if (res.status === 204) return undefined as T;
       return (await res.json()) as T;
     } finally {
       clearTimeout(t);
@@ -132,7 +137,12 @@ export class LibraryServerClient {
       } catch (e) {
         throw humanizeNetError(e);
       }
-      if (!res.ok) throw new HttpError(res.status, `Сервер ответил ${res.status} на ${path}`);
+      if (!res.ok) {
+        // Текст тела — человекочитаемая причина от сервера (если он её дал),
+        // например «это не файл базы SQLite» при восстановлении.
+        const msg = (await res.text().catch(() => '')).trim();
+        throw new HttpError(res.status, msg || `Сервер ответил ${res.status} на ${path}`);
+      }
       return res;
     } finally {
       clearTimeout(t);
@@ -442,8 +452,48 @@ export class LibraryServerClient {
 
   /** Скачать резервную копию БД (админ) как Blob. */
   async backup(): Promise<Blob> {
-    const res = await this.#fetch('/api/backup');
+    const res = await this.#fetch('/api/backup', {}, 10 * 60_000);
     return res.blob();
+  }
+
+  /** Скачать ПОЛНЫЙ архив (БД + книги) как Blob. Может быть большим. */
+  async backupFull(): Promise<Blob> {
+    const res = await this.#fetch('/api/backup/full', {}, 30 * 60_000);
+    return res.blob();
+  }
+
+  /** Настройки автобэкапа + фактическая папка и время последней копии. */
+  async getBackupSettings(): Promise<BackupSettingsInfo> {
+    const res = await this.#fetch('/api/backup/settings');
+    return (await res.json()) as BackupSettingsInfo;
+  }
+
+  /** Сохранить настройки автобэкапа (сервер применяет расписание сразу). */
+  async putBackupSettings(s: BackupSettings): Promise<void> {
+    await this.#postJson<void>('/api/backup/settings', s, 'PUT');
+  }
+
+  /** Сделать резервную копию на сервере прямо сейчас (в папку из настроек). */
+  async runBackupNow(): Promise<{ file: string; size: number }> {
+    const res = await this.#fetch('/api/backup/run', { method: 'POST' }, 10 * 60_000);
+    return (await res.json()) as { file: string; size: number };
+  }
+
+  /** Список файлов резервных копий на сервере (свежие сверху). */
+  async listBackups(): Promise<BackupFile[]> {
+    const res = await this.#fetch('/api/backup/list');
+    return (await res.json()) as BackupFile[];
+  }
+
+  /**
+   * Восстановить БД сервера из файла копии (.db). Сервер сам делает
+   * страховочную копию текущей БД. После успеха рекомендуется перезапуск.
+   */
+  async restore(file: File | Blob): Promise<{ ok: boolean; message: string }> {
+    const fd = new FormData();
+    fd.append('file', file);
+    const res = await this.#fetch('/api/restore', { method: 'POST', body: fd }, 10 * 60_000);
+    return (await res.json()) as { ok: boolean; message: string };
   }
 
   /**

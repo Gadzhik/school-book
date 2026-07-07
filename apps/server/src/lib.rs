@@ -16,6 +16,7 @@
 
 mod auth;
 mod autotag;
+mod backup;
 mod db;
 mod mdns;
 mod metadata;
@@ -67,6 +68,10 @@ struct AppState {
     updates: PathBuf,
     /// Канал живой рассылки прогресса WS-клиентам (JSON DeviceProgress).
     progress_tx: broadcast::Sender<ProgressMsg>,
+    /// Путь файла БД (для автобэкапа/восстановления).
+    db_path: PathBuf,
+    /// Сигнал фоновой задаче автобэкапа: «настройки изменились, перечитай».
+    backup_notify: tokio::sync::Notify,
 }
 
 /// Сообщение живой рассылки прогресса: скоуп аккаунта + готовый JSON.
@@ -151,12 +156,15 @@ pub struct ServerHandle {
     join: tokio::task::JoinHandle<()>,
     /// Фоновая задача периодического рескана библиотеки.
     rescan: tokio::task::JoinHandle<()>,
+    /// Фоновая задача автобэкапа по расписанию.
+    autobackup: tokio::task::JoinHandle<()>,
 }
 
 impl ServerHandle {
     /// Корректно остановить сервер и дождаться завершения фоновой задачи.
     pub async fn stop(mut self) {
         self.rescan.abort();
+        self.autobackup.abort();
         if let Some(tx) = self.shutdown.take() {
             let _ = tx.send(());
         }
@@ -223,6 +231,19 @@ fn build_router(state: Arc<AppState>, web_dir: Option<PathBuf>) -> Router {
         .route("/api/dict/{lang}", get(dict_file))
         .route("/api/audit", get(get_audit))
         .route("/api/backup", get(backup))
+        // Резервные копии: настройки автобэкапа, ручной запуск, список копий,
+        // полный архив (БД+книги) и восстановление БД из копии (всё — админ).
+        .route(
+            "/api/backup/settings",
+            get(get_backup_settings).put(put_backup_settings),
+        )
+        .route("/api/backup/run", post(run_backup_now))
+        .route("/api/backup/list", get(list_backup_files))
+        .route("/api/backup/full", get(backup_full))
+        .route(
+            "/api/restore",
+            post(restore_db).layer(DefaultBodyLimit::max(512 * 1024 * 1024)),
+        )
         .route("/api/bookmarks", get(get_bookmarks).post(post_bookmarks))
         .route("/api/highlights", get(get_highlights).post(post_highlights))
         // Обновления приложения: манифест и файлы публичны (скачивание APK/
@@ -324,6 +345,8 @@ pub async fn start(cfg: Config) -> std::io::Result<ServerHandle> {
         jwt_secret,
         progress_tx,
         updates: cfg.updates.clone(),
+        db_path: cfg.db_path.clone(),
+        backup_notify: tokio::sync::Notify::new(),
     });
 
     match &cfg.web_dir {
@@ -362,6 +385,47 @@ pub async fn start(cfg: Config) -> std::io::Result<ServerHandle> {
         }
     });
 
+    // Автобэкап по расписанию: настройки — в meta-таблице БД (правятся через
+    // /api/backup/settings на лету, сигнал — backup_notify). Выключен — задача
+    // просто ждёт сигнала об изменении настроек.
+    let ab_state = state.clone();
+    let autobackup = tokio::spawn(async move {
+        loop {
+            let s = backup::load_settings(&ab_state.db);
+            let delay = backup::next_delay(&ab_state.db, &s);
+            tokio::select! {
+                // Настройки изменились — пересчитать расписание.
+                _ = ab_state.backup_notify.notified() => continue,
+                _ = async {
+                    match delay {
+                        Some(d) => tokio::time::sleep(d).await,
+                        None => std::future::pending::<()>().await,
+                    }
+                } => {}
+            }
+            // Пока спали, ручная копия могла закрыть текущий интервал — не дублим.
+            if !backup::still_due(&ab_state.db, &s) {
+                continue;
+            }
+            let st = ab_state.clone();
+            let cfg = s.clone();
+            let res = tokio::task::spawn_blocking(move || {
+                backup::perform_backup(&st.db, &st.db_path, &st.library, &cfg)
+            })
+            .await;
+            match res {
+                Ok(Ok((name, size))) => {
+                    tracing::info!("автобэкап: {name} ({size} байт)");
+                    ab_state
+                        .db
+                        .log_audit("система", "backup", &format!("автокопия {name}"));
+                }
+                Ok(Err(e)) => tracing::warn!("автобэкап не удался: {e}"),
+                Err(e) => tracing::warn!("задача автобэкапа упала: {e}"),
+            }
+        }
+    });
+
     // Фоновая задача держит сервер; останавливается по oneshot-сигналу.
     let (tx, rx) = tokio::sync::oneshot::channel::<()>();
     let join = tokio::spawn(async move {
@@ -382,6 +446,7 @@ pub async fn start(cfg: Config) -> std::io::Result<ServerHandle> {
         shutdown: Some(tx),
         join,
         rescan,
+        autobackup,
     })
 }
 
@@ -501,7 +566,7 @@ async fn status(State(st): State<Arc<AppState>>, headers: HeaderMap) -> Json<Ser
     })
 }
 
-fn now_ms() -> i64 {
+pub(crate) fn now_ms() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as i64)
@@ -1252,35 +1317,254 @@ async fn get_audit(State(st): State<Arc<AppState>>, headers: HeaderMap) -> Respo
     }
 }
 
-/// Скачать резервную копию БД (только админ). VACUUM INTO → байты файла.
-async fn backup(State(st): State<Arc<AppState>>, headers: HeaderMap) -> Response {
-    let Some(me) = current_user(&st, &headers) else {
-        return StatusCode::UNAUTHORIZED.into_response();
+/// Проверка «активный админ» для операций с резервными копиями.
+/// Err — готовый HTTP-ответ (401/403).
+fn require_admin(st: &AppState, headers: &HeaderMap) -> Result<User, Response> {
+    let Some(me) = current_user(st, headers) else {
+        return Err(StatusCode::UNAUTHORIZED.into_response());
     };
     if me.status != UserStatus::Active || me.role != Role::Admin {
-        return StatusCode::FORBIDDEN.into_response();
+        return Err(StatusCode::FORBIDDEN.into_response());
     }
-    let tmp = std::env::temp_dir().join(format!("chitalka_backup_{}.db", now_ms()));
-    if st.db.backup_to(&tmp).is_err() {
-        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    Ok(me)
+}
+
+/// Удалить временные файлы бэкапа старше часа (temp-файлы стриминга нельзя
+/// удалять, пока они отдаются клиенту — чистим отложенно при следующем вызове).
+fn cleanup_stale_backup_tmp() {
+    let dir = std::env::temp_dir();
+    let Ok(entries) = std::fs::read_dir(&dir) else {
+        return;
+    };
+    let hour_ago = std::time::SystemTime::now() - std::time::Duration::from_secs(3600);
+    for e in entries.flatten() {
+        let name = e.file_name().to_string_lossy().to_string();
+        if !name.starts_with("chitalka_backup_") && !name.starts_with("chitalka_full_") {
+            continue;
+        }
+        if let Ok(meta) = e.metadata() {
+            if meta.modified().map(|t| t < hour_ago).unwrap_or(false) {
+                let _ = std::fs::remove_file(e.path());
+            }
+        }
     }
-    let bytes = match std::fs::read(&tmp) {
-        Ok(b) => b,
+}
+
+/// Отдать файл потоком с заголовком attachment (без чтения в память).
+async fn stream_attachment(path: &std::path::Path, download_name: &str) -> Response {
+    let file = match tokio::fs::File::open(path).await {
+        Ok(f) => f,
         Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     };
-    let _ = std::fs::remove_file(&tmp);
-    st.db.log_audit(&me.full_name, "backup", "скачана резервная копия");
-    (
+    let len = file.metadata().await.map(|m| m.len()).ok();
+    let stream = tokio_util::io::ReaderStream::new(file);
+    let mut resp = (
         [
             (header::CONTENT_TYPE, "application/octet-stream".to_string()),
             (
                 header::CONTENT_DISPOSITION,
-                "attachment; filename=\"chitalka-backup.db\"".to_string(),
+                format!("attachment; filename=\"{download_name}\""),
             ),
         ],
-        bytes,
+        Body::from_stream(stream),
     )
-        .into_response()
+        .into_response();
+    if let Some(len) = len {
+        if let Ok(v) = len.to_string().parse() {
+            resp.headers_mut().insert(header::CONTENT_LENGTH, v);
+        }
+    }
+    resp
+}
+
+/// Скачать резервную копию БД (только админ). VACUUM INTO → поток файла
+/// (без чтения целиком в память — БД может быть большой).
+async fn backup(State(st): State<Arc<AppState>>, headers: HeaderMap) -> Response {
+    let me = match require_admin(&st, &headers) {
+        Ok(u) => u,
+        Err(r) => return r,
+    };
+    cleanup_stale_backup_tmp();
+    let tmp = std::env::temp_dir().join(format!("chitalka_backup_{}.db", now_ms()));
+    let db_st = st.clone();
+    let tmp2 = tmp.clone();
+    let ok = tokio::task::spawn_blocking(move || db_st.db.backup_to(&tmp2).is_ok())
+        .await
+        .unwrap_or(false);
+    if !ok {
+        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    }
+    st.db.log_audit(&me.full_name, "backup", "скачана резервная копия");
+    stream_attachment(&tmp, "chitalka-backup.db").await
+}
+
+/// Скачать ПОЛНУЮ резервную копию (только админ): zip с БД и папкой книг.
+async fn backup_full(State(st): State<Arc<AppState>>, headers: HeaderMap) -> Response {
+    let me = match require_admin(&st, &headers) {
+        Ok(u) => u,
+        Err(r) => return r,
+    };
+    cleanup_stale_backup_tmp();
+    let tmp = std::env::temp_dir().join(format!("chitalka_full_{}.zip", now_ms()));
+    let db_st = st.clone();
+    let tmp2 = tmp.clone();
+    let res = tokio::task::spawn_blocking(move || {
+        backup::write_full_zip(&db_st.db, &db_st.library, &tmp2)
+    })
+    .await;
+    if !matches!(res, Ok(Ok(()))) {
+        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    }
+    st.db
+        .log_audit(&me.full_name, "backup", "скачан полный архив (БД + книги)");
+    stream_attachment(&tmp, "chitalka-full-backup.zip").await
+}
+
+/// Текущие настройки автобэкапа + фактическая папка и время последней копии.
+async fn get_backup_settings(State(st): State<Arc<AppState>>, headers: HeaderMap) -> Response {
+    if let Err(r) = require_admin(&st, &headers) {
+        return r;
+    }
+    let s = backup::load_settings(&st.db);
+    let dir = backup::resolve_dir(&s, &st.db_path);
+    let last: Option<i64> = st.db.meta_get("backup_last_ms").and_then(|v| v.parse().ok());
+    Json(serde_json::json!({
+        "settings": s,
+        "resolvedDir": dir.to_string_lossy(),
+        "lastBackupMs": last,
+    }))
+    .into_response()
+}
+
+/// Сохранить настройки автобэкапа (валидация + сигнал фоновой задаче).
+async fn put_backup_settings(
+    State(st): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Json(s): Json<backup::BackupSettings>,
+) -> Response {
+    let me = match require_admin(&st, &headers) {
+        Ok(u) => u,
+        Err(r) => return r,
+    };
+    if let Err(e) = backup::save_settings(&st.db, &s) {
+        return (StatusCode::BAD_REQUEST, e).into_response();
+    }
+    st.backup_notify.notify_one(); // задача перечитает расписание
+    st.db.log_audit(
+        &me.full_name,
+        "backup_settings",
+        &format!(
+            "автобэкап: {}, {}, хранить {}",
+            if s.enabled { "вкл" } else { "выкл" },
+            if s.mode == "daily" {
+                format!("ежедневно в {}", s.daily_at)
+            } else {
+                format!("каждые {} ч", s.every_hours)
+            },
+            s.keep
+        ),
+    );
+    StatusCode::NO_CONTENT.into_response()
+}
+
+/// Сделать резервную копию прямо сейчас (в папку из настроек, с ротацией).
+async fn run_backup_now(State(st): State<Arc<AppState>>, headers: HeaderMap) -> Response {
+    let me = match require_admin(&st, &headers) {
+        Ok(u) => u,
+        Err(r) => return r,
+    };
+    let s = backup::load_settings(&st.db);
+    let db_st = st.clone();
+    let s2 = s.clone();
+    let res = tokio::task::spawn_blocking(move || {
+        backup::perform_backup(&db_st.db, &db_st.db_path, &db_st.library, &s2)
+    })
+    .await;
+    match res {
+        Ok(Ok((name, size))) => {
+            st.db
+                .log_audit(&me.full_name, "backup", &format!("ручная копия {name}"));
+            Json(serde_json::json!({ "file": name, "size": size })).into_response()
+        }
+        _ => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
+}
+
+/// Список копий в папке бэкапов (свежие сверху).
+async fn list_backup_files(State(st): State<Arc<AppState>>, headers: HeaderMap) -> Response {
+    if let Err(r) = require_admin(&st, &headers) {
+        return r;
+    }
+    let s = backup::load_settings(&st.db);
+    let dir = backup::resolve_dir(&s, &st.db_path);
+    Json(backup::list_backups(&dir)).into_response()
+}
+
+/// Восстановить БД из загруженной копии (.db, multipart-поле file).
+/// Перед восстановлением автоматически сохраняется страховочная копия
+/// текущей БД (pre-restore) в папку бэкапов. После — рекомендуем перезапуск.
+async fn restore_db(
+    State(st): State<Arc<AppState>>,
+    headers: HeaderMap,
+    mut mp: Multipart,
+) -> Response {
+    let me = match require_admin(&st, &headers) {
+        Ok(u) => u,
+        Err(r) => return r,
+    };
+    // Достаём файл из multipart.
+    let mut bytes: Option<Vec<u8>> = None;
+    while let Ok(Some(field)) = mp.next_field().await {
+        if field.name() == Some("file") {
+            match field.bytes().await {
+                Ok(b) => bytes = Some(b.to_vec()),
+                Err(_) => return (StatusCode::BAD_REQUEST, "файл не дочитан").into_response(),
+            }
+        }
+    }
+    let Some(bytes) = bytes else {
+        return (StatusCode::BAD_REQUEST, "нет поля file").into_response();
+    };
+    // Быстрая проверка формата до каких-либо действий с живой БД.
+    if !bytes.starts_with(b"SQLite format 3\0") {
+        return (StatusCode::BAD_REQUEST, "это не файл базы SQLite").into_response();
+    }
+    let tmp = std::env::temp_dir().join(format!("chitalka_restore_{}.db", now_ms()));
+    if std::fs::write(&tmp, &bytes).is_err() {
+        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    }
+    // Страховочная копия текущей БД — рядом с обычными бэкапами.
+    let s = backup::load_settings(&st.db);
+    let dir = backup::resolve_dir(&s, &st.db_path);
+    let _ = std::fs::create_dir_all(&dir);
+    let safety = dir.join(format!("pre-restore-{}.db", now_ms()));
+    let db_st = st.clone();
+    let tmp2 = tmp.clone();
+    let res = tokio::task::spawn_blocking(move || {
+        db_st
+            .db
+            .backup_to(&safety)
+            .map_err(|e| format!("страховочная копия: {e}"))?;
+        db_st
+            .db
+            .restore_from(&tmp2)
+            .map_err(|e| format!("восстановление: {e}"))
+    })
+    .await;
+    let _ = std::fs::remove_file(&tmp);
+    match res {
+        Ok(Ok(())) => {
+            st.db
+                .log_audit(&me.full_name, "restore", "БД восстановлена из копии");
+            Json(serde_json::json!({
+                "ok": true,
+                "message": "База восстановлена. Перезапустите сервер, чтобы применились миграции и все клиенты переподключились."
+            }))
+            .into_response()
+        }
+        Ok(Err(e)) => (StatusCode::BAD_REQUEST, e).into_response(),
+        _ => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
 }
 
 // --- Задания (ТЗ Часть 6, п.6.5) ---
@@ -1614,12 +1898,12 @@ async fn opds_by_category(State(st): State<Arc<AppState>>, headers: HeaderMap, P
 /// книгу, которая пользователю не видна (иначе фильтр каталога обходится).
 async fn download(State(st): State<Arc<AppState>>, Path(id): Path<String>, req: Request) -> Response {
     let user = current_user(&st, req.headers());
+    // Точечный запрос: не читаем весь каталог на каждое скачивание.
     let allowed = st
         .db
-        .all_books_access()
-        .unwrap_or_default()
-        .into_iter()
-        .find(|b| b.book.id == id)
+        .book_access_by_id(&id)
+        .ok()
+        .flatten()
         .map(|b| can_see(user.as_ref(), &b))
         .unwrap_or(false);
     if !allowed {
@@ -1657,12 +1941,12 @@ async fn cover(
             }
         }
     }
+    // Точечный запрос: не читаем весь каталог на каждую обложку.
     let allowed = st
         .db
-        .all_books_access()
-        .unwrap_or_default()
-        .into_iter()
-        .find(|b| b.book.id == id)
+        .book_access_by_id(&id)
+        .ok()
+        .flatten()
         .map(|b| can_see(user.as_ref(), &b))
         .unwrap_or(false);
     if !allowed {
