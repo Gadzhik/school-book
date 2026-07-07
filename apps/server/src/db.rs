@@ -450,6 +450,39 @@ impl Db {
         rows.collect()
     }
 
+    /// Данные доступа одной книги по id (для download/cover: точечный запрос
+    /// вместо чтения всего каталога на каждое скачивание).
+    pub fn book_access_by_id(&self, id: &str) -> rusqlite::Result<Option<BookAccess>> {
+        let conn = self.conn.lock().unwrap();
+        let r = conn.query_row(
+            "SELECT id,title,author,format,size,added_at,classes,subjects,categories,public,owner_id
+             FROM books WHERE id=?1",
+            params![id],
+            |r| {
+                Ok(BookAccess {
+                    book: Book {
+                        id: r.get(0)?,
+                        title: r.get(1)?,
+                        author: r.get(2)?,
+                        format: r.get(3)?,
+                        size: r.get(4)?,
+                        added_at: r.get(5)?,
+                    },
+                    classes: split_csv(&r.get::<_, String>(6)?),
+                    subjects: split_csv(&r.get::<_, String>(7)?),
+                    categories: split_csv(&r.get::<_, String>(8)?),
+                    public: r.get::<_, i64>(9)? != 0,
+                    owner_id: r.get(10)?,
+                })
+            },
+        );
+        match r {
+            Ok(b) => Ok(Some(b)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+
     /// Путь файла книги (для раздачи с Range).
     pub fn book_path(&self, id: &str) -> rusqlite::Result<Option<PathBuf>> {
         let conn = self.conn.lock().unwrap();
@@ -568,6 +601,49 @@ impl Db {
             params![secret],
         );
         secret
+    }
+
+    /// Прочитать значение из meta-таблицы (настройки сервера, ключ-значение).
+    pub fn meta_get(&self, key: &str) -> Option<String> {
+        let conn = self.conn.lock().unwrap();
+        conn.query_row("SELECT value FROM meta WHERE key=?1", params![key], |r| r.get(0))
+            .ok()
+    }
+
+    /// Записать значение в meta-таблицу (создать или заменить).
+    pub fn meta_set(&self, key: &str, value: &str) -> rusqlite::Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT OR REPLACE INTO meta (key,value) VALUES (?1,?2)",
+            params![key, value],
+        )?;
+        Ok(())
+    }
+
+    /// Восстановить БД из файла src ПОВЕРХ живого соединения (SQLite online
+    /// backup API в обратную сторону: src → текущая БД). Содержимое подменяется
+    /// атомарно для читателей; после восстановления рекомендуется перезапуск
+    /// сервера (миграции/секреты перечитываются на старте).
+    pub fn restore_from(&self, src: &Path) -> rusqlite::Result<()> {
+        let src_conn = Connection::open_with_flags(
+            src,
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+        )?;
+        // Проверка, что это БД читалки, а не случайный SQLite-файл.
+        let looks_ok: bool = src_conn
+            .query_row(
+                "SELECT COUNT(*)>=2 FROM sqlite_master
+                 WHERE type='table' AND name IN ('books','users','progress')",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap_or(false);
+        if !looks_ok {
+            return Err(rusqlite::Error::InvalidQuery);
+        }
+        let mut conn = self.conn.lock().unwrap();
+        let backup = rusqlite::backup::Backup::new(&src_conn, &mut conn)?;
+        backup.run_to_completion(64, std::time::Duration::from_millis(5), None)
     }
 
     /// Число пользователей (для бутстрапа первого администратора).

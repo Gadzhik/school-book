@@ -28,6 +28,7 @@ pnpm --filter @reader/server dev
 | `CHITALKA_ADMIN_LOGIN` | `admin` | Логин встроенного администратора (создаётся, если в БД нет ни одного активного админа) |
 | `CHITALKA_ADMIN_PASSWORD` | `admin` | Пароль встроенного администратора — **сменить при первом запуске** |
 | `CHITALKA_UPDATES` | `<library>/_updates` | Папка обновлений приложения: `manifest.json` + файлы (APK/инсталляторы). Клиенты показывают вкладку «Доступно обновление» |
+| `CHITALKA_BACKUP_*` | см. раздел «Аудит и резервные копии» | Начальные настройки автобэкапа (`ENABLED`, `MODE`, `EVERY_HOURS`, `DAILY_AT`, `KEEP`, `DIR`, `BOOKS`); после первого сохранения настроек через админку — истина в БД |
 
 ### Офлайн-словарь (пак для клиентов)
 
@@ -121,10 +122,23 @@ CORS разрешён для любого origin — веб-клиент (PWA н
 - `GET /api/bookmarks?since=<ms>` / `POST /api/bookmarks` — закладки **текущего пользователя** (по JWT), дельта по `since`, LWW по `updatedAt`, тумбстоуны. Между пользователями изолированы.
 - `GET /api/highlights?since=<ms>` / `POST /api/highlights` — выделения/заметки текущего пользователя, аналогично.
 
-### Аудит и резервная копия (ТЗ Часть 6, E8+E9)
+### Аудит и резервные копии (ТЗ Часть 6, E8+E9)
 
-- `GET /api/audit` — журнал действий (последние 300): кто/что/детали/время. Только admin/power. Логируются register/approve/reject/upload/assign/unassign/backup.
-- `GET /api/backup` — скачать согласованную копию БД (SQLite, `VACUUM INTO`). Только admin. Восстановление: остановить сервер, заменить файл `CHITALKA_DB` этим файлом, запустить снова.
+- `GET /api/audit` — журнал действий (последние 300): кто/что/детали/время. Только admin/power. Логируются register/approve/reject/upload/assign/unassign/backup/backup_settings/restore.
+- `GET /api/backup` — скачать согласованную копию БД (SQLite, `VACUUM INTO`), отдаётся потоком. Только admin.
+- `GET /api/backup/full` — скачать **полный архив** (zip: `chitalka.db` + вся папка `library/`). Только admin. На большой библиотеке может собираться долго.
+- `GET/PUT /api/backup/settings` — настройки автобэкапа (JSON, см. ниже). PUT применяет расписание сразу, без перезапуска. Только admin.
+- `POST /api/backup/run` — сделать копию прямо сейчас в папку копий (с ротацией). Ответ: `{file, size}`. Только admin.
+- `GET /api/backup/list` — список файлов копий в папке (свежие сверху). Только admin.
+- `POST /api/restore` — восстановить БД из файла копии `.db` (multipart, поле `file`). Перед заменой сервер сам сохраняет страховочную копию текущей БД (`pre-restore-*.db`) в папку копий. Замена происходит на живом соединении (SQLite backup API); после — **перезапустить сервер**. Только admin.
+
+**Автобэкап по расписанию.** Настройки хранятся в БД (meta-таблица) и правятся из админки веб-UI (секция «Резервные копии») или через API. Поля: `enabled`, `mode` (`daily` — ежедневно в `dailyAt` «HH:MM» местного времени сервера; `interval` — каждые `everyHours` часов, отметка последнего запуска переживает рестарт), `keep` (сколько последних копий хранить, старые удаляются), `dir` (папка; пусто → `<папка БД>/backups`), `includeBooks` (true — полный zip с книгами, false — только `.db`). Каждый автозапуск пишется в аудит от имени «система».
+
+Начальные значения до первого сохранения через API можно задать env-переменными: `CHITALKA_BACKUP_ENABLED`, `CHITALKA_BACKUP_MODE` (`interval`/`daily`), `CHITALKA_BACKUP_EVERY_HOURS`, `CHITALKA_BACKUP_DAILY_AT` («HH:MM»), `CHITALKA_BACKUP_KEEP`, `CHITALKA_BACKUP_DIR`, `CHITALKA_BACKUP_BOOKS`. После первого PUT настроек env игнорируются (истина — в БД).
+
+**Восстановление (два пути).**
+1. Через админку/API: загрузить файл `.db` в `POST /api/restore` → перезапустить сервер. Книги (`library/`) этим не затрагиваются.
+2. Вручную (например, на новой машине из полного архива): остановить сервер, распаковать zip — `chitalka.db` на место `CHITALKA_DB`, папку `library/` на место `CHITALKA_LIBRARY`, — запустить сервер.
 
 Пароли хранятся как **argon2-хэш**. JWT (HS256, TTL 30 дней) подписывается персистентным секретом из таблицы `meta` (генерируется при первом запуске). Роли: `admin`/`power`/`teacher`/`student`; статусы: `pending`/`active`/`blocked`.
 

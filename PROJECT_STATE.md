@@ -560,3 +560,34 @@
   `dist\server\web` пересобраны уже С полифиллом .at, selection-фиксом и
   IndexedDB-фолбэком словаря; словарный пак лежит в
   `dist\server\library\_dict\ru.json`. Эмулятор и тестовый сервер погашены.
+- **2026-07-07 (Windows): резервные копии — полный контур (автобэкап по
+  расписанию, восстановление, полный архив).** Сервер: новый модуль
+  `apps/server/src/backup.rs`. (1) Автобэкап полностью настраиваемый:
+  `enabled`, `mode=daily|interval` (ежедневно в HH:MM местного времени /
+  каждые N часов; отметка последнего запуска в meta переживает рестарт),
+  `keep` (ротация старых копий), `dir` (пусто → `<папка БД>/backups`),
+  `includeBooks` (полный zip vs только .db). Настройки — в meta-таблице
+  (`backup_settings`), правятся на лету через `GET/PUT /api/backup/settings`
+  (фоновая задача перечитывает по Notify), начальные значения — env
+  `CHITALKA_BACKUP_*` (см. apps/server/README.md). Автозапуски — в аудит от
+  «система». (2) Новые API (все admin): `POST /api/backup/run`,
+  `GET /api/backup/list`, `GET /api/backup/full` (zip: БД + library/),
+  `POST /api/restore` (multipart .db; проверка заголовка SQLite и таблиц;
+  страховочная `pre-restore-*.db`; живая замена через rusqlite backup API —
+  включена фича `backup`; после восстановления — перезапуск). (3) `/api/backup`
+  и `/api/backup/full` отдаются потоком (tokio-util ReaderStream), а не через
+  чтение в память; temp-файлы чистятся отложенно (старше часа). (4) Попутная
+  оптимизация: download/cover — точечный `book_access_by_id` вместо чтения
+  всего каталога на каждый запрос. (5) UI: новая секция админки
+  `packages/ui/src/server/BackupPanel.svelte` — форма расписания, «сделать
+  сейчас», скачивание .db/полного zip, восстановление с подтверждением,
+  список копий; методы клиента в `packages/network` (`getBackupSettings/
+  putBackupSettings/runBackupNow/listBackups/backupFull/restore`),
+  en-переводы. Новые deps сервера: chrono (clock), tokio-util (io). Проверки
+  зелёные (svelte-check 0/0, network tsc, cargo test 12/12, vitest 21/21).
+  Живой e2e на тестовом сервере (порт 9797, scratch-БД в temp): валидация
+  настроек (кривое время отклонено), ручные копии, ротация keep=2,
+  daily-срабатывание ровно в HH:MM:00 (+запись в аудит), restore с откатом
+  (2 юзера → 1) и страховочной копией, отказ мусорному файлу, полный zip
+  содержит chitalka.db + library/. Билды/dist НЕ пересобирались (по правилу
+  «билды по явной просьбе») — в dist этих фич ещё нет.

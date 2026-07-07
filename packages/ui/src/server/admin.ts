@@ -3,7 +3,13 @@
  * Журнал — admin/power; скачивание бэкапа — только admin.
  */
 import { writable, get } from 'svelte/store';
-import type { Role, AuditEntry } from '@reader/network';
+import type {
+  Role,
+  AuditEntry,
+  BackupSettings,
+  BackupSettingsInfo,
+  BackupFile,
+} from '@reader/network';
 import { authedClient, session } from './auth';
 import { tr } from '../i18n';
 
@@ -43,16 +49,97 @@ export async function downloadBackup(): Promise<void> {
   adminError.set('');
   try {
     const blob = await c.backup();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    const date = new Date().toISOString().slice(0, 10);
-    a.download = `chitalka-backup-${date}.db`;
-    a.click();
-    URL.revokeObjectURL(url);
+    saveBlob(blob, `chitalka-backup-${new Date().toISOString().slice(0, 10)}.db`);
   } catch (e) {
     adminError.set(e instanceof Error ? e.message : tr('Не удалось скачать копию'));
   } finally {
     adminBusy.set(false);
   }
+}
+
+// --- Резервные копии: настройки автобэкапа, ручной запуск, восстановление ---
+
+export const backupInfo = writable<BackupSettingsInfo | null>(null);
+export const backupFiles = writable<BackupFile[]>([]);
+export const backupBusy = writable(false);
+export const backupError = writable('');
+/** Уведомление об успехе (имя сделанной копии, результат восстановления…). */
+export const backupNotice = writable('');
+
+/** Сохранить Blob как файл в браузере. */
+function saveBlob(blob: Blob, name: string): void {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+async function withBackupBusy(fn: () => Promise<void>): Promise<void> {
+  const role = get(session)?.user.role;
+  if (!canBackup(role)) return;
+  backupBusy.set(true);
+  backupError.set('');
+  backupNotice.set('');
+  try {
+    await fn();
+  } catch (e) {
+    backupError.set(e instanceof Error ? e.message : tr('Операция не удалась'));
+  } finally {
+    backupBusy.set(false);
+  }
+}
+
+/** Загрузить настройки автобэкапа и список копий на сервере. */
+export async function loadBackupInfo(): Promise<void> {
+  await withBackupBusy(async () => {
+    const c = authedClient();
+    if (!c) return;
+    backupInfo.set(await c.getBackupSettings());
+    backupFiles.set(await c.listBackups());
+  });
+}
+
+/** Сохранить настройки автобэкапа (расписание применяется сразу). */
+export async function saveBackupSettings(s: BackupSettings): Promise<void> {
+  await withBackupBusy(async () => {
+    const c = authedClient();
+    if (!c) return;
+    await c.putBackupSettings(s);
+    backupInfo.set(await c.getBackupSettings());
+    backupNotice.set(tr('Настройки сохранены'));
+  });
+}
+
+/** Сделать копию на сервере прямо сейчас (в папку из настроек). */
+export async function backupNow(): Promise<void> {
+  await withBackupBusy(async () => {
+    const c = authedClient();
+    if (!c) return;
+    const r = await c.runBackupNow();
+    backupFiles.set(await c.listBackups());
+    backupInfo.set(await c.getBackupSettings());
+    backupNotice.set(tr('Копия создана: {0}', r.file));
+  });
+}
+
+/** Скачать полный архив (БД + книги) файлом в браузере. */
+export async function downloadFullBackup(): Promise<void> {
+  await withBackupBusy(async () => {
+    const c = authedClient();
+    if (!c) return;
+    const blob = await c.backupFull();
+    saveBlob(blob, `chitalka-full-backup-${new Date().toISOString().slice(0, 10)}.zip`);
+  });
+}
+
+/** Восстановить БД сервера из выбранного файла .db. */
+export async function restoreFromFile(file: File): Promise<void> {
+  await withBackupBusy(async () => {
+    const c = authedClient();
+    if (!c) return;
+    const r = await c.restore(file);
+    backupNotice.set(r.message || tr('База восстановлена'));
+  });
 }

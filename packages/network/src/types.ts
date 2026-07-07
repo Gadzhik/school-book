@@ -153,6 +153,40 @@ export interface AuditEntry {
   detail?: string;
 }
 
+/** Настройки автоматического резервного копирования (админ). */
+export interface BackupSettings {
+  /** Включён ли автобэкап. */
+  enabled: boolean;
+  /** Режим расписания: каждые N часов или ежедневно в HH:MM. */
+  mode: 'interval' | 'daily';
+  /** Период в часах (mode=interval, >=1). */
+  everyHours: number;
+  /** Время суток «HH:MM» местное (mode=daily). */
+  dailyAt: string;
+  /** Сколько последних копий хранить. */
+  keep: number;
+  /** Папка для копий; пусто → <папка БД>/backups на сервере. */
+  dir: string;
+  /** true — полный архив (БД + книги), false — только БД. */
+  includeBooks: boolean;
+}
+
+/** Настройки автобэкапа + фактическое состояние на сервере. */
+export interface BackupSettingsInfo {
+  settings: BackupSettings;
+  /** Фактическая папка копий на сервере (после подстановки умолчания). */
+  resolvedDir: string;
+  /** Время последней успешной копии, мс epoch (null — ещё не было). */
+  lastBackupMs: number | null;
+}
+
+/** Файл резервной копии на сервере. */
+export interface BackupFile {
+  name: string;
+  size: number;
+  modifiedMs: number;
+}
+
 /** Строка сводного прогресса класса: ученик × книга. */
 export interface ClassProgressRow {
   userId: string;
