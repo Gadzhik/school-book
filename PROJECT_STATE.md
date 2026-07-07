@@ -614,3 +614,13 @@
   появились «вход:» и tower_http-строки; на error — тишина при запросах;
   после рестарта уровень подтянулся из БД; на verbose пошли trace-тики
   рескана. Билды/dist не пересобирались.
+- **2026-07-07 (Windows): dist обновлён с бэкапами и уровнями логов.**
+  По команде владельца пересобраны все билды: `Читалка-android.apk`
+  (release aarch64+x86_64, подписан debug-ключом, allowBackup=0x0, 124 МБ;
+  правки gen/android на месте — проверены до сборки),
+  `Читалка-desktop-setup.exe` (NSIS, 105 МБ, внутри свежий встроенный
+  сервер), `dist\server\chitalka-server.exe` (release) + `dist\server\web\`
+  (свежий apps/web/dist с BackupPanel и «Логи сервера»). Данные владельца
+  (`dist\server\chitalka.db`, `library\`) НЕ тронуты. Смоук dist-exe на
+  scratch-БД: /status ok, /api/log-level=info, /api/backup/settings отвечает,
+  UI отдаётся (HTTP 200).
