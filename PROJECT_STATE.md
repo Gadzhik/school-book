@@ -738,3 +738,21 @@
   - По плану «1-9» дальше: dist 0.2.0 (+манифест обновлений), эмулятор
     (PDF свайп/пан, сканер вирт-камерой), AI-проверка — **LM Studio
     основной, Ollama запасной** (указание владельца), push, iOS-отчёт.
+- **2026-07-09 (Windows): dist пересобран — версия 0.2.0 + обновления на
+  сервере.** По команде владельца (пункт 1 списка «1-9»):
+  - `apps/web/package.json` 0.1.0 → **0.2.0** (= версия приложения,
+    VITE_APP_VERSION).
+  - **dist/**: `Читалка-android.apk` (release aarch64+x86_64, подпись
+    debug-ключом, allowBackup=false проверен, 124 МБ),
+    `Читалка-desktop-setup.exe` (NSIS, 105 МБ), `server/chitalka-server.exe`
+    (release со всеми фичами паролей), `server/web/` (свежий apps/web/dist),
+    `ИНСТРУКЦИЯ.md`. Данные сервера (chitalka.db, library) не тронуты.
+  - **Обновления**: `dist/server/library/_updates/` — manifest.json 0.2.0
+    (заметки на русском) + chitalka-0.2.0.apk + chitalka-0.2.0-setup.exe.
+    Проверено изолированным сервером (порт 9763, scratch-БД,
+    CHITALKA_UPDATES→эта папка): /api/update отдаёт манифест, /updates/*.apk
+    отдаётся с application/vnd.android.package-archive, web-UI 0.2.0
+    раздаётся. Клиенты 0.1.0 увидят вкладку «Доступно обновление».
+  - gen/android правки на месте (MainActivity без enableEdgeToEdge,
+    allowBackup=false, values-en). iOS-оболочку на Windows не собрать
+    (нужен macOS/Xcode) — пункт 9 списка закрыт отчётом.
