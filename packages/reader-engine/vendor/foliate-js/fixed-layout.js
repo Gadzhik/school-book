@@ -180,7 +180,16 @@ export class FixedLayout extends HTMLElement {
         const transform = frame => {
             let { element, iframe, width, height, blank, onZoom } = frame
             if (!iframe) return
-            if (onZoom) onZoom({ doc: frame.iframe.contentDocument, scale })
+            if (onZoom) {
+                // Патч: при уходе из читалки (размонтирование) ResizeObserver
+                // может сработать после отсоединения iframe — его
+                // contentDocument уже null, а pdf.js onZoom обращается к
+                // doc.documentElement и роняет TypeError в консоль. Пропускаем
+                // такой «мёртвый» кадр.
+                const doc = frame.iframe.contentDocument
+                if (!doc) return
+                onZoom({ doc, scale })
+            }
             const iframeScale = onZoom ? scale : 1
             Object.assign(iframe.style, {
                 width: `${width * iframeScale}px`,
@@ -356,8 +365,13 @@ export class FixedLayout extends HTMLElement {
             // TODO: index, overlayer
         }))
     }
+    disconnectedCallback() {
+        // Элемент убран из DOM (закрытие книги) — глушим наблюдатель, чтобы
+        // отложенный ResizeObserver не дёрнул #render по уже мёртвым iframe.
+        this.#observer.disconnect()
+    }
     destroy() {
-        this.#observer.unobserve(this)
+        this.#observer.disconnect()
     }
 }
 
