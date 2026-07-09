@@ -780,3 +780,13 @@
     размонтирования) — не блокер, кандидат на аккуратный teardown.
   - iOS-оболочка (пункт 9) — только macOS/Xcode, на Windows не собрать
     (отчёт). Kubuntu-синк (пункт 8) — через `git push origin master`.
+- **2026-07-09 (Windows): фикс грабли teardown в foliate fixed-layout.**
+  `vendor/foliate-js/fixed-layout.js`: при уходе с открытого PDF ResizeObserver
+  срабатывал после отсоединения iframe → `onZoom` получал `contentDocument=null`
+  → pdf.js `render()` ронял `TypeError: reading documentElement` в консоль.
+  Патч: (1) в `transform` пропускаем кадр, если `iframe.contentDocument` пуст
+  (не зовём onZoom по мёртвому iframe); (2) добавлен `disconnectedCallback()` —
+  глушит ResizeObserver при удалении элемента из DOM. Проверено вживую (Edge,
+  порт 9764, патченый web): открыть PDF → зум → выйти = чисто, ошибок консоли
+  нет. Собранные копии web (apps/web/dist, dist/server/web, desktop target)
+  обновлены наложением (они gitignored, регенерятся при сборке).
