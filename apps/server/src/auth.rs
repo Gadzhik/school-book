@@ -22,6 +22,11 @@ pub struct Claims {
     pub role: String,
     /// Срок действия (unix-секунды).
     pub exp: i64,
+    /// Поколение токена: должно совпадать с users.token_gen — смена пароля
+    /// или блокировка двигают поколение и отзывают все старые JWT.
+    /// default 0 — токены, выпущенные до этой фичи, продолжают работать.
+    #[serde(default)]
+    pub gen: i64,
 }
 
 /// Требование к паролю (единый текст для ошибок сервера и подсказок в UI).
@@ -75,12 +80,13 @@ pub fn generate_secret() -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
-/// Выпустить JWT для пользователя.
-pub fn issue_token(secret: &str, user_id: &str, role: Role) -> Result<String, String> {
+/// Выпустить JWT для пользователя (gen — текущее users.token_gen).
+pub fn issue_token(secret: &str, user_id: &str, role: Role, gen: i64) -> Result<String, String> {
     let claims = Claims {
         sub: user_id.to_string(),
         role: role.as_str().to_string(),
         exp: now_secs() + TOKEN_TTL_SECS,
+        gen,
     };
     encode(
         &Header::default(),
@@ -136,10 +142,11 @@ mod tests {
     #[test]
     fn jwt_roundtrip_and_wrong_secret() {
         let secret = "test-secret";
-        let token = issue_token(secret, "user-1", Role::Teacher).unwrap();
+        let token = issue_token(secret, "user-1", Role::Teacher, 3).unwrap();
         let claims = verify_token(secret, &token).expect("валидный токен");
         assert_eq!(claims.sub, "user-1");
         assert_eq!(claims.role, "teacher");
+        assert_eq!(claims.gen, 3);
         // Чужим секретом не проходит.
         assert!(verify_token("other-secret", &token).is_none());
     }
