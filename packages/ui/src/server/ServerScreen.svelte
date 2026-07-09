@@ -345,6 +345,19 @@
       <!-- Поднять локальный сервер (десктоп). На вебе/мобильном скрыто. -->
       <LocalServerPanel />
     </section>
+  {:else if $session?.user.mustChangePassword}
+    <!-- Принудительная смена пароля: встроенный admin/admin или пароль,
+         выданный админом. Работа с сервером закрыта, пока не сменит. -->
+    <section class="connected">
+      <div class="force-pw">
+        <h2>{$t('Смените пароль')}</h2>
+        <p>
+          {$t('Ваш пароль задан по умолчанию или выдан администратором. Для безопасности задайте собственный пароль — без этого работа с сервером недоступна.')}
+        </p>
+        <PasswordChange />
+        <button class="ghost sm" onclick={logout}>{$t('Выйти')}</button>
+      </div>
+    </section>
   {:else}
     <section class="connected">
       <div class="server-bar">
@@ -680,6 +693,20 @@
   }
   .error {
     color: #c0392b;
+  }
+  .force-pw {
+    max-width: 420px;
+    padding: 1rem;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface);
+  }
+  .force-pw h2 {
+    margin: 0 0 0.4rem;
+  }
+  .force-pw p {
+    color: var(--muted);
+    font-size: 0.92rem;
   }
   .server-bar {
     display: flex;

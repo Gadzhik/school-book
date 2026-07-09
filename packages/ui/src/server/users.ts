@@ -5,7 +5,7 @@
  */
 import { writable, get } from 'svelte/store';
 import type { Role, UserAccount } from '@reader/network';
-import { authedClient, session } from './auth';
+import { authedClient, session, passwordChanged } from './auth';
 import { tr } from '../i18n';
 
 export const usersList = writable<UserAccount[]>([]);
@@ -108,7 +108,10 @@ export async function changeMyPassword(oldPw: string, newPw: string): Promise<st
   const c = authedClient();
   if (!c) return tr('Нет подключения к серверу');
   try {
-    await c.changeMyPassword(oldPw, newPw);
+    // Сервер отзывает старые JWT (token_gen) и возвращает свежий — обновляем
+    // сессию, иначе следующий же запрос получил бы 401.
+    const newToken = await c.changeMyPassword(oldPw, newPw);
+    passwordChanged(newToken);
     return null;
   } catch (e) {
     return msg(e);

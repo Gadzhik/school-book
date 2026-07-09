@@ -525,6 +525,11 @@ export const en: Record<string, string> = {
   'Пароль должен быть не короче 8 символов и содержать буквы и цифры':
     'Password must be at least 8 characters long and contain letters and digits',
   'Пароль не должен совпадать с логином': 'Password must not match the login',
+  'Смените пароль': 'Change your password',
+  'Ваш пароль задан по умолчанию или выдан администратором. Для безопасности задайте собственный пароль — без этого работа с сервером недоступна.':
+    'Your password is a default one or was issued by an administrator. For security, set your own password — the server is unavailable until you do.',
+  'Слишком много попыток входа. Подождите 30 секунд.':
+    'Too many sign-in attempts. Please wait 30 seconds.',
   'Классы через запятую (напр. 5А, 6Б)': 'Classes, comma-separated (e.g. 5A, 6B)',
   'Предметы через запятую': 'Subjects, comma-separated',
   'Создать': 'Create',

@@ -78,6 +78,8 @@ export interface UserAccount {
   subjects: string[];
   classes: string[];
   createdAt: number;
+  /** Требуется сменить пароль до работы (встроенный админ, сброс админом). */
+  mustChangePassword?: boolean;
 }
 
 /** Данные регистрации (ТЗ 6.2). Учитель: subjects+classes; ученик: class. */

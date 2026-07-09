@@ -120,6 +120,21 @@ export function logout(): void {
 }
 
 /**
+ * Применить успешную смену пароля: свежий JWT (старые отозваны сервером через
+ * token_gen) и снятый флаг «требуется смена пароля». newToken отсутствует —
+ * старый сервер (204), токен оставляем прежним.
+ */
+export function passwordChanged(newToken?: string): void {
+  const s = get(session);
+  if (!s) return;
+  setSession({
+    ...s,
+    token: newToken ?? s.token,
+    user: { ...s.user, mustChangePassword: false },
+  });
+}
+
+/**
  * Обновить профиль с сервера (например статус «ожидает» → «активен»).
  * Офлайн/ошибка — тихо оставляем кэшированный профиль.
  */

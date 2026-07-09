@@ -266,13 +266,23 @@ export class LibraryServerClient {
     await this.#fetch(`/api/users/${encodeURIComponent(id)}`, { method: 'DELETE' });
   }
 
-  /** Сменить свой пароль (нужен текущий). Сервер шлёт 204. */
-  async changeMyPassword(oldPassword: string, newPassword: string): Promise<void> {
-    await this.#fetch('/api/me/password', {
+  /**
+   * Сменить свой пароль (нужен текущий). Смена отзывает старые JWT
+   * (token_gen), поэтому сервер возвращает свежий токен — сохранить его
+   * вместо прежнего. Старый сервер отвечал 204 без тела → undefined.
+   */
+  async changeMyPassword(oldPassword: string, newPassword: string): Promise<string | undefined> {
+    const res = await this.#fetch('/api/me/password', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ oldPassword, newPassword }),
     });
+    try {
+      const data = (await res.json()) as { token?: string };
+      return data.token;
+    } catch {
+      return undefined; // 204 от старого сервера
+    }
   }
 
   /** Сбросить пароль другого пользователя (админ/power; нельзя себя). 204. */

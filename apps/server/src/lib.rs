@@ -24,6 +24,7 @@ mod metadata;
 mod models;
 mod opds;
 
+use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -73,7 +74,23 @@ struct AppState {
     db_path: PathBuf,
     /// Сигнал фоновой задаче автобэкапа: «настройки изменились, перечитай».
     backup_notify: tokio::sync::Notify,
+    /// Троттлинг входа: login → счётчик неудач/время блокировки (анти-брутфорс).
+    login_attempts: std::sync::Mutex<HashMap<String, LoginThrottle>>,
 }
+
+/// Состояние анти-брутфорса для одного логина.
+#[derive(Default, Clone, Copy)]
+struct LoginThrottle {
+    /// Неудачных попыток подряд (сбрасывается успехом или блокировкой).
+    fails: u32,
+    /// До какого момента (unix мс) вход заблокирован.
+    blocked_until: i64,
+}
+
+/// Порог неудач до временной блокировки входа.
+const LOGIN_MAX_FAILS: u32 = 5;
+/// Длительность блокировки входа после серии неудач, мс.
+const LOGIN_BLOCK_MS: i64 = 30_000;
 
 /// Сообщение живой рассылки прогресса: скоуп аккаунта + готовый JSON.
 /// scope=None — legacy-клиенты без аккаунта; сокет получает только сообщения
@@ -316,6 +333,10 @@ fn seed_admin(db: &Db, login: &str, password: &str) {
         subjects: Vec::new(),
         classes: Vec::new(),
         created_at: now_ms(),
+        // Пароль по умолчанию общеизвестен — при первом входе клиент обязан
+        // потребовать его смену (PublicUser.mustChangePassword).
+        must_change_pw: true,
+        token_gen: 0,
     };
     match db.create_user(&admin) {
         Ok(()) => {
@@ -378,6 +399,7 @@ pub async fn start(cfg: Config) -> std::io::Result<ServerHandle> {
         updates: cfg.updates.clone(),
         db_path: cfg.db_path.clone(),
         backup_notify: tokio::sync::Notify::new(),
+        login_attempts: std::sync::Mutex::new(HashMap::new()),
     });
 
     match &cfg.web_dir {
@@ -608,12 +630,24 @@ pub(crate) fn now_ms() -> i64 {
         .unwrap_or(0)
 }
 
+/// Пользователь по JWT-строке с проверкой поколения токена: если после выпуска
+/// токена пароль сменили или пользователя блокировали (token_gen сдвинулся) —
+/// токен отозван. Единая точка для заголовка, query (?token=) и WS.
+fn user_from_jwt(st: &AppState, token: &str) -> Option<User> {
+    let claims = auth::verify_token(&st.jwt_secret, token)?;
+    let user = st.db.user_by_id(&claims.sub).ok().flatten()?;
+    if claims.gen != user.token_gen {
+        tracing::debug!("отозванный токен (gen {} != {}): {}", claims.gen, user.token_gen, user.login);
+        return None;
+    }
+    Some(user)
+}
+
 /// Текущий пользователь из заголовка Authorization: Bearer <JWT>.
 fn current_user(st: &AppState, headers: &HeaderMap) -> Option<User> {
     let auth_h = headers.get(header::AUTHORIZATION)?.to_str().ok()?;
     let token = auth_h.strip_prefix("Bearer ")?;
-    let claims = auth::verify_token(&st.jwt_secret, token)?;
-    st.db.user_by_id(&claims.sub).ok().flatten()
+    user_from_jwt(st, token)
 }
 
 /// Регистрация (ТЗ 6.2). Первый пользователь — администратор (бутстрап);
@@ -662,6 +696,8 @@ async fn register(State(st): State<Arc<AppState>>, Json(req): Json<RegisterReq>)
         subjects,
         classes,
         created_at: now_ms(),
+        must_change_pw: false, // пароль выбран самим пользователем
+        token_gen: 0,
     };
 
     match st.db.create_user(&user) {
@@ -671,7 +707,7 @@ async fn register(State(st): State<Arc<AppState>>, Json(req): Json<RegisterReq>)
                 "register",
                 &format!("{} ({})", role.as_str(), user.login),
             );
-            let token = auth::issue_token(&st.jwt_secret, &user.id, role).unwrap_or_default();
+            let token = auth::issue_token(&st.jwt_secret, &user.id, role, 0).unwrap_or_default();
             Json(AuthResponse { token, user: user.public() }).into_response()
         }
         Err(_) => (StatusCode::CONFLICT, "Логин уже занят").into_response(),
@@ -681,20 +717,55 @@ async fn register(State(st): State<Arc<AppState>>, Json(req): Json<RegisterReq>)
 /// Вход по логину/паролю. Возвращает JWT + профиль (даже если статус «ожидает» —
 /// клиент покажет, что ждёт одобрения; права проверяются на защищённых роутах).
 async fn login(State(st): State<Arc<AppState>>, Json(req): Json<LoginReq>) -> Response {
+    // Анти-брутфорс: после LOGIN_MAX_FAILS неудач подряд логин блокируется на
+    // LOGIN_BLOCK_MS (argon2 сам по себе не мешает перебору по сети).
+    let key = req.login.trim().to_lowercase();
+    {
+        let mut map = st.login_attempts.lock().unwrap();
+        // Не даём карте расти бесконечно: чистим отработавшие записи.
+        if map.len() > 1000 {
+            let now = now_ms();
+            map.retain(|_, t| t.fails > 0 || t.blocked_until > now);
+        }
+        let t = map.entry(key.clone()).or_default();
+        if now_ms() < t.blocked_until {
+            return (
+                StatusCode::TOO_MANY_REQUESTS,
+                "Слишком много попыток входа. Подождите 30 секунд.",
+            )
+                .into_response();
+        }
+    }
+    let fail = |st: &AppState, key: &str| {
+        let mut map = st.login_attempts.lock().unwrap();
+        let t = map.entry(key.to_string()).or_default();
+        t.fails += 1;
+        if t.fails >= LOGIN_MAX_FAILS {
+            t.blocked_until = now_ms() + LOGIN_BLOCK_MS;
+            t.fails = 0;
+            tracing::warn!("вход временно заблокирован (перебор паролей?): {key}");
+        }
+    };
     let user = match st.db.user_by_login(req.login.trim()) {
         Ok(Some(u)) => u,
-        Ok(None) => return (StatusCode::UNAUTHORIZED, "Неверный логин или пароль").into_response(),
+        Ok(None) => {
+            fail(&st, &key);
+            return (StatusCode::UNAUTHORIZED, "Неверный логин или пароль").into_response();
+        }
         Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     };
     if !auth::verify_password(&req.password, &user.pw_hash) {
         tracing::debug!("вход отклонён (неверный пароль): {}", user.login);
+        fail(&st, &key);
         return (StatusCode::UNAUTHORIZED, "Неверный логин или пароль").into_response();
     }
     if user.status == UserStatus::Blocked {
         tracing::debug!("вход отклонён (заблокирован): {}", user.login);
         return (StatusCode::FORBIDDEN, "Учётная запись заблокирована").into_response();
     }
-    let token = auth::issue_token(&st.jwt_secret, &user.id, user.role).unwrap_or_default();
+    st.login_attempts.lock().unwrap().remove(&key); // успех сбрасывает счётчик
+    let token =
+        auth::issue_token(&st.jwt_secret, &user.id, user.role, user.token_gen).unwrap_or_default();
     tracing::debug!("вход: {} ({:?})", user.login, user.role);
     Json(AuthResponse { token, user: user.public() }).into_response()
 }
@@ -1082,6 +1153,9 @@ async fn create_user_admin(
         subjects,
         classes: req.classes.clone(),
         created_at: now_ms(),
+        // Пароль назначен админом → пользователь сменит его при первом входе.
+        must_change_pw: true,
+        token_gen: 0,
     };
     match st.db.create_user(&user) {
         Ok(()) => {
@@ -1207,10 +1281,15 @@ async fn change_my_password(
         Ok(h) => h,
         Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     };
-    match st.db.set_user_password(&me.id, &pw_hash) {
+    // Смена пароля отзывает ВСЕ старые токены (token_gen+1) — в т.ч. текущий.
+    // Возвращаем свежий JWT нового поколения, чтобы клиент не разлогинился.
+    match st.db.set_user_password(&me.id, &pw_hash, false) {
         Ok(true) => {
             st.db.log_audit(&me.full_name, "change_password", &me.login);
-            StatusCode::NO_CONTENT.into_response()
+            let gen = st.db.token_gen(&me.id).unwrap_or(me.token_gen + 1);
+            let token =
+                auth::issue_token(&st.jwt_secret, &me.id, me.role, gen).unwrap_or_default();
+            Json(serde_json::json!({ "token": token })).into_response()
         }
         Ok(false) => StatusCode::NOT_FOUND.into_response(),
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
@@ -1257,7 +1336,9 @@ async fn reset_user_password(
         Ok(h) => h,
         Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     };
-    match st.db.set_user_password(&id, &pw_hash) {
+    // Сброшенный пароль временный: цель обязана сменить его при первом входе;
+    // старые токены цели отзываются (token_gen+1).
+    match st.db.set_user_password(&id, &pw_hash, true) {
         Ok(true) => {
             st.db.log_audit(&me.full_name, "reset_password", &target.login);
             StatusCode::NO_CONTENT.into_response()
@@ -2023,11 +2104,7 @@ async fn cover(
     Query(q): Query<WsQuery>,
 ) -> Response {
     // JWT из query → пользователь (для can_see). Не JWT — проверяем пэйринг.
-    let user = q
-        .token
-        .as_deref()
-        .and_then(|t| auth::verify_token(&st.jwt_secret, t))
-        .and_then(|c| st.db.user_by_id(&c.sub).ok().flatten());
+    let user = q.token.as_deref().and_then(|t| user_from_jwt(&st, t));
     if user.is_none() {
         if let Some(tok) = &st.token {
             if q.token.as_deref() != Some(tok.as_str()) {
@@ -2176,8 +2253,7 @@ async fn ws_handler(
     let jwt_user = q
         .token
         .as_deref()
-        .and_then(|t| auth::verify_token(&st.jwt_secret, t))
-        .and_then(|c| st.db.user_by_id(&c.sub).ok().flatten())
+        .and_then(|t| user_from_jwt(&st, t))
         .filter(|u| u.status == UserStatus::Active);
     let scope: Option<String> = match jwt_user {
         Some(u) => Some(u.id),
@@ -2681,6 +2757,8 @@ mod tests {
             subjects: subjects.iter().map(|s| s.to_string()).collect(),
             classes: classes.iter().map(|s| s.to_string()).collect(),
             created_at: 0,
+            must_change_pw: false,
+            token_gen: 0,
         }
     }
 

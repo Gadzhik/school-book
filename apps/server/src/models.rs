@@ -135,6 +135,10 @@ pub struct User {
     pub subjects: Vec<String>,
     pub classes: Vec<String>,
     pub created_at: i64,
+    /// Требуется смена пароля при следующем входе (встроенный админ, сброс).
+    pub must_change_pw: bool,
+    /// Поколение JWT: несовпадение с gen в токене = токен отозван.
+    pub token_gen: i64,
 }
 
 impl User {
@@ -149,6 +153,7 @@ impl User {
             subjects: self.subjects.clone(),
             classes: self.classes.clone(),
             created_at: self.created_at,
+            must_change_password: self.must_change_pw,
         }
     }
 }
@@ -166,6 +171,9 @@ pub struct PublicUser {
     pub classes: Vec<String>,
     #[serde(rename = "createdAt")]
     pub created_at: i64,
+    /// Клиент обязан показать смену пароля до работы с сервером.
+    #[serde(rename = "mustChangePassword")]
+    pub must_change_password: bool,
 }
 
 /// Запрос регистрации (ТЗ 6.2). Учитель: subjects+classes; ученик: class.

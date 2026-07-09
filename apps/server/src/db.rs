@@ -105,7 +105,9 @@ impl Db {
                  pw_hash TEXT NOT NULL,
                  subjects TEXT NOT NULL DEFAULT '',
                  classes TEXT NOT NULL DEFAULT '',
-                 created_at INTEGER NOT NULL
+                 created_at INTEGER NOT NULL,
+                 must_change_pw INTEGER NOT NULL DEFAULT 0,
+                 token_gen INTEGER NOT NULL DEFAULT 0
              );
              CREATE TABLE IF NOT EXISTS meta (
                  key TEXT PRIMARY KEY,
@@ -224,6 +226,18 @@ impl Db {
             conn.execute("UPDATE books SET public=1", [])?;
         }
         let _ = conn.execute("ALTER TABLE books ADD COLUMN owner_id TEXT", []);
+        // Миграция аккаунтов: must_change_pw — принудительная смена пароля при
+        // следующем входе (встроенный админ, созданные/сброшенные админом);
+        // token_gen — «поколение» JWT: смена пароля/блокировка отзывает старые
+        // токены (в Claims пишется gen, при несовпадении токен невалиден).
+        let _ = conn.execute(
+            "ALTER TABLE users ADD COLUMN must_change_pw INTEGER NOT NULL DEFAULT 0",
+            [],
+        );
+        let _ = conn.execute(
+            "ALTER TABLE users ADD COLUMN token_gen INTEGER NOT NULL DEFAULT 0",
+            [],
+        );
         // Миграция синка на аккаунты (Часть 6): в progress/words добавился
         // user_id (вошёл в PRIMARY KEY). SQLite не меняет PK через ALTER —
         // перестраиваем таблицу. Старые строки получают user_id='' —
@@ -657,8 +671,9 @@ impl Db {
         let conn = self.conn.lock().unwrap();
         conn.execute(
             "INSERT INTO users
-               (id,role,status,full_name,login,pw_hash,subjects,classes,created_at)
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)",
+               (id,role,status,full_name,login,pw_hash,subjects,classes,created_at,
+                must_change_pw,token_gen)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)",
             params![
                 u.id,
                 u.role.as_str(),
@@ -669,6 +684,8 @@ impl Db {
                 u.subjects.join(","),
                 u.classes.join(","),
                 u.created_at,
+                u.must_change_pw as i64,
+                u.token_gen,
             ],
         )?;
         Ok(())
@@ -678,7 +695,7 @@ impl Db {
     pub fn user_by_login(&self, login: &str) -> rusqlite::Result<Option<User>> {
         let conn = self.conn.lock().unwrap();
         let r = conn.query_row(
-            "SELECT id,role,status,full_name,login,pw_hash,subjects,classes,created_at
+            "SELECT id,role,status,full_name,login,pw_hash,subjects,classes,created_at,must_change_pw,token_gen
              FROM users WHERE login=?1",
             params![login],
             map_user,
@@ -694,7 +711,7 @@ impl Db {
     pub fn list_users(&self) -> rusqlite::Result<Vec<User>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id,role,status,full_name,login,pw_hash,subjects,classes,created_at
+            "SELECT id,role,status,full_name,login,pw_hash,subjects,classes,created_at,must_change_pw,token_gen
              FROM users ORDER BY created_at DESC",
         )?;
         let rows = stmt.query_map([], map_user)?;
@@ -702,12 +719,21 @@ impl Db {
     }
 
     /// Изменить статус пользователя (одобрение/блокировка). true — изменён.
+    /// Блокировка двигает token_gen — активные JWT заблокированного отзываются
+    /// сразу (иначе токен жил бы до 30 дней).
     pub fn set_user_status(&self, id: &str, status: UserStatus) -> rusqlite::Result<bool> {
         let conn = self.conn.lock().unwrap();
-        let n = conn.execute(
-            "UPDATE users SET status=?1 WHERE id=?2",
-            params![status.as_str(), id],
-        )?;
+        let n = if status == UserStatus::Blocked {
+            conn.execute(
+                "UPDATE users SET status=?1, token_gen=token_gen+1 WHERE id=?2",
+                params![status.as_str(), id],
+            )?
+        } else {
+            conn.execute(
+                "UPDATE users SET status=?1 WHERE id=?2",
+                params![status.as_str(), id],
+            )?
+        };
         Ok(n > 0)
     }
 
@@ -740,20 +766,34 @@ impl Db {
     }
 
     /// Сменить хэш пароля пользователя (смена своего / сброс админом).
-    pub fn set_user_password(&self, id: &str, pw_hash: &str) -> rusqlite::Result<bool> {
+    /// `must_change` — потребовать смену при следующем входе (сброс админом).
+    /// Всегда двигает token_gen: старые JWT пользователя отзываются.
+    pub fn set_user_password(
+        &self,
+        id: &str,
+        pw_hash: &str,
+        must_change: bool,
+    ) -> rusqlite::Result<bool> {
         let conn = self.conn.lock().unwrap();
         let n = conn.execute(
-            "UPDATE users SET pw_hash=?1 WHERE id=?2",
-            params![pw_hash, id],
+            "UPDATE users SET pw_hash=?1, must_change_pw=?2, token_gen=token_gen+1 WHERE id=?3",
+            params![pw_hash, must_change as i64, id],
         )?;
         Ok(n > 0)
+    }
+
+    /// Текущее поколение токенов пользователя (после bump'а — для выпуска
+    /// нового JWT взамен отозванных).
+    pub fn token_gen(&self, id: &str) -> rusqlite::Result<i64> {
+        let conn = self.conn.lock().unwrap();
+        conn.query_row("SELECT token_gen FROM users WHERE id=?1", params![id], |r| r.get(0))
     }
 
     /// Найти пользователя по id (для /me и middleware).
     pub fn user_by_id(&self, id: &str) -> rusqlite::Result<Option<User>> {
         let conn = self.conn.lock().unwrap();
         let r = conn.query_row(
-            "SELECT id,role,status,full_name,login,pw_hash,subjects,classes,created_at
+            "SELECT id,role,status,full_name,login,pw_hash,subjects,classes,created_at,must_change_pw,token_gen
              FROM users WHERE id=?1",
             params![id],
             map_user,
@@ -1258,6 +1298,8 @@ fn map_user(r: &rusqlite::Row) -> rusqlite::Result<User> {
         subjects: split(r.get::<_, String>(6)?),
         classes: split(r.get::<_, String>(7)?),
         created_at: r.get(8)?,
+        must_change_pw: r.get::<_, i64>(9)? != 0,
+        token_gen: r.get(10)?,
     })
 }
 
@@ -1322,6 +1364,8 @@ mod tests {
             subjects: vec![],
             classes: classes.iter().map(|s| s.to_string()).collect(),
             created_at: 0,
+            must_change_pw: false,
+            token_gen: 0,
         }
     }
 
