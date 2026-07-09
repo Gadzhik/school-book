@@ -6,18 +6,27 @@
    * десктоп-оболочке — на вебе/мобильном `invoke` либо отсутствует, либо команда
    * не зарегистрирована, и панель прячется (probe в onMount).
    *
-   * Роль (admin/power) проверяется на сервере для управляющих действий. Здесь,
-   * до входа, кнопка нужна для первичного поднятия сервера на своей машине —
-   * это локальное действие хоста; дальше доступом рулит сервер по ролям.
+   * Правила запуска (защита от «зоопарка» серверов в школе):
+   * - перед запуском ищем серверы в сети (mDNS `discover_servers`);
+   * - если сервер уже есть — показываем «в сети уже есть сервер: имя (адрес)»,
+   *   и ДОПОЛНИТЕЛЬНЫЙ сервер может запустить только вошедший администратор;
+   * - если сети пусто — запуск свободный (первичное поднятие сервера школы).
+   * Дальше доступом к данным рулит сам сервер по ролям.
    */
   import { onMount } from 'svelte';
   import { connect } from './store';
-  import { t } from '../i18n';
+  import { session } from './auth';
+  import { t, tr } from '../i18n';
 
   interface ServerInfo {
     running: boolean;
     address: string;
     port: number;
+  }
+
+  interface DiscoveredServer {
+    baseUrl: string;
+    name?: string;
   }
 
   type Invoke = <T>(cmd: string, args?: Record<string, unknown>) => Promise<T>;
@@ -29,6 +38,29 @@
   let info = $state<ServerInfo | null>(null);
   let busy = $state(false);
   let error = $state('');
+  /// Серверы, уже найденные в сети (кроме нашего локального).
+  let existing = $state<DiscoveredServer[]>([]);
+  // Доп. сервер при живом чужом — только администратор.
+  const isAdmin = $derived($session?.user.role === 'admin');
+  const canStart = $derived(existing.length === 0 || isAdmin);
+
+  /// Человекочитаемо: «Имя (host:port)».
+  function srvLabel(s: DiscoveredServer): string {
+    const host = s.baseUrl.replace(/^https?:\/\//, '').replace(/\/$/, '');
+    return s.name ? `${s.name} (${host})` : host;
+  }
+
+  /// Поиск чужих серверов в сети; свой запущенный исключаем по порту.
+  async function scanNetwork(): Promise<void> {
+    if (!invoke) return;
+    try {
+      const found = await invoke<DiscoveredServer[]>('discover_servers');
+      const ownPort = info?.running ? `:${info.port}` : null;
+      existing = found.filter((s) => !(ownPort && s.baseUrl.includes(ownPort)));
+    } catch {
+      existing = []; // поиск недоступен — не блокируем первичный запуск
+    }
+  }
 
   onMount(async () => {
     if (!invoke) return;
@@ -37,7 +69,9 @@
       supported = true; // команда есть → это десктоп
     } catch {
       supported = false; // веб/мобильный — панель не показываем
+      return;
     }
+    void scanNetwork();
   });
 
   async function start() {
@@ -45,6 +79,15 @@
     busy = true;
     error = '';
     try {
+      // Свежая проверка сети прямо перед запуском (панель могла висеть давно).
+      await scanNetwork();
+      if (existing.length > 0 && !isAdmin) {
+        error = tr(
+          'В сети уже есть запущенный сервер: {0}. Дополнительный сервер может запустить только администратор — войдите администратором.',
+          existing.map(srvLabel).join(', ')
+        );
+        return;
+      }
       info = await invoke<ServerInfo>('start_server');
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
@@ -91,10 +134,22 @@
         <button class="ghost sm" onclick={stop} disabled={busy}>{$t('Остановить')}</button>
       </div>
     {:else}
-      <p class="ls-hint">{$t('Запустите сервер на этом компьютере, чтобы раздать книги в сети.')}</p>
-      <button class="primary sm" onclick={start} disabled={busy}>
-        {busy ? $t('Запуск…') : $t('Запустить сервер')}
-      </button>
+      {#if existing.length > 0}
+        <p class="ls-exists">
+          {$t('В сети уже есть запущенный сервер:')}
+          <strong>{existing.map(srvLabel).join(', ')}</strong>
+        </p>
+        {#if !isAdmin}
+          <p class="ls-hint">{$t('Дополнительный сервер может запустить только администратор.')}</p>
+        {/if}
+      {:else}
+        <p class="ls-hint">{$t('Запустите сервер на этом компьютере, чтобы раздать книги в сети.')}</p>
+      {/if}
+      {#if canStart}
+        <button class="primary sm" onclick={start} disabled={busy}>
+          {busy ? $t('Запуск…') : $t('Запустить сервер')}
+        </button>
+      {/if}
     {/if}
 
     {#if error}<p class="ls-error">{error}</p>{/if}
@@ -126,6 +181,14 @@
   .ls-state.on {
     color: #2e7d32;
     font-weight: 600;
+  }
+  .ls-exists {
+    margin: 0 0 0.4rem;
+    color: #b26a00;
+    font-size: 0.9rem;
+  }
+  .ls-exists strong {
+    color: var(--text);
   }
   .ls-hint,
   .ls-addr {

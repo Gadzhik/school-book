@@ -506,22 +506,25 @@ export const en: Record<string, string> = {
   'Скрыть смену пароля': 'Hide password change',
   'Сменить пароль': 'Change password',
   'Текущий пароль': 'Current password',
-  'Новый пароль (мин. 4)': 'New password (min. 4)',
+  'Новый пароль': 'New password',
   'Повторите новый': 'Repeat new password',
   'Сменить': 'Change',
   'Пароль изменён': 'Password changed',
-  'Новый пароль минимум 4 символа': 'New password must be at least 4 characters',
   'Пароли не совпадают': 'Passwords do not match',
   'Старший': 'Power user',
   'ожидает': 'pending',
   'Удалить пользователя «{0}»? Действие необратимо.':
     'Delete user "{0}"? This cannot be undone.',
-  'Новый пароль для «{0}» (минимум 4 символа):': 'New password for "{0}" (at least 4 characters):',
-  'Пароль минимум 4 символа': 'Password must be at least 4 characters',
+  'Новый пароль для «{0}» (не короче 8 символов, обязательно буквы и цифры):':
+    'New password for "{0}" (at least 8 characters, must contain letters and digits):',
   'Пароль для «{0}» изменён.': 'Password for "{0}" changed.',
   '+ Добавить': '+ Add',
   'Имя и фамилия': 'Full name',
-  'Пароль (мин. 4)': 'Password (min. 4)',
+  'Не короче 8 символов, обязательно буквы и цифры, не совпадает с логином.':
+    'At least 8 characters, must contain letters and digits, must differ from the login.',
+  'Пароль должен быть не короче 8 символов и содержать буквы и цифры':
+    'Password must be at least 8 characters long and contain letters and digits',
+  'Пароль не должен совпадать с логином': 'Password must not match the login',
   'Классы через запятую (напр. 5А, 6Б)': 'Classes, comma-separated (e.g. 5A, 6B)',
   'Предметы через запятую': 'Subjects, comma-separated',
   'Создать': 'Create',
@@ -538,6 +541,11 @@ export const en: Record<string, string> = {
     'Start the server on this computer to share books over the network.',
   'Запуск…': 'Starting…',
   'Запустить сервер': 'Start server',
+  'В сети уже есть запущенный сервер:': 'A server is already running on the network:',
+  'Дополнительный сервер может запустить только администратор.':
+    'Only an administrator can start an additional server.',
+  'В сети уже есть запущенный сервер: {0}. Дополнительный сервер может запустить только администратор — войдите администратором.':
+    'A server is already running on the network: {0}. Only an administrator can start an additional server — sign in as an administrator.',
   'Доступно обновление': 'Update available',
   'Приложение раздаёт сам сервер — достаточно перезагрузить страницу.':
     'The app is served by the server itself — just reload the page.',
@@ -598,8 +606,7 @@ export const en: Record<string, string> = {
   'Нет прав на удаление книг': 'No permission to delete books',
   'Нет прав на этот класс': 'No permission for this class',
   'Свой пароль меняйте через смену пароля': 'Change your own password via password change',
-  'Укажите имя, логин и пароль (минимум 4 символа)':
-    'Provide a name, login and password (at least 4 characters)',
+  'Укажите имя, логин и пароль': 'Provide a name, login and password',
   'Учётная запись заблокирована': 'The account is blocked',
   'Файл не передан': 'No file was sent',
   // OPDS-разделы каталога (сервер отдаёт русские названия)

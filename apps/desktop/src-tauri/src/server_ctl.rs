@@ -68,7 +68,7 @@ pub async fn start_server(
         library: base.join("library"),
         db_path: base.join("chitalka.db"),
         token: None,
-        name: "Читалка".to_string(),
+        name: "Школьная библиотека".to_string(),
         explicit_port: None, // первый свободный 9700–9899
         web_dir,
         // Встроенный админ при пустой БД (для входа сразу после установки).

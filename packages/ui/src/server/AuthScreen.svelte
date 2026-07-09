@@ -204,6 +204,9 @@
       autocomplete={mode === 'login' ? 'current-password' : 'new-password'}
       onkeydown={(e) => e.key === 'Enter' && submit()}
     />
+    {#if mode === 'register'}
+      <span class="pw-hint">{$t('Не короче 8 символов, обязательно буквы и цифры, не совпадает с логином.')}</span>
+    {/if}
   </label>
 
   {#if mode === 'register' && role === 'student'}
@@ -465,6 +468,12 @@
   }
   .error {
     color: #c0392b;
+  }
+  .pw-hint {
+    display: block;
+    margin-top: 0.25rem;
+    color: var(--muted);
+    font-size: 0.8rem;
   }
   .retry {
     margin: 0.3rem 0 0.5rem;
