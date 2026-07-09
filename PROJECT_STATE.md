@@ -790,3 +790,13 @@
   порт 9764, патченый web): открыть PDF → зум → выйти = чисто, ошибок консоли
   нет. Собранные копии web (apps/web/dist, dist/server/web, desktop target)
   обновлены наложением (они gitignored, регенерятся при сборке).
+- **2026-07-09 (Windows): пересборка билдов с фиксом teardown (0.2.0).**
+  По просьбе владельца пересобраны все web-содержащие артефакты (фикс — в web,
+  foliate-js): APK (release aarch64+x86_64, подпись debug-ключом,
+  allowBackup=0 проверен), NSIS-инсталлятор, свежий `dist/server/web`. Версия
+  осталась 0.2.0 (мелкий фикс консоли, набор фич тот же). Обновлены dist/ и
+  манифестные файлы `_updates/` (chitalka-0.2.0.apk, chitalka-0.2.0-setup.exe).
+  Серверный exe не пересобирался (фикс web-only). Фикс подтверждён в
+  apps/web/dist и dist/server/web (guard contentDocument, count=4); внутри APK
+  web зашит в .so (brotli) — провенанс: beforeBuild пересобрал web из
+  закоммиченного vendor-фикса. dist/ — gitignored, в репо только исходники.
