@@ -24,6 +24,30 @@ pub struct Claims {
     pub exp: i64,
 }
 
+/// Требование к паролю (единый текст для ошибок сервера и подсказок в UI).
+pub const PASSWORD_RULE: &str =
+    "Пароль должен быть не короче 8 символов и содержать буквы и цифры";
+
+/// Проверить силу пароля. Возвращает русское описание проблемы.
+/// Применяется ВЕЗДЕ, где пароль устанавливается (регистрация, создание
+/// пользователя админом, смена своего, сброс чужого). На вход по СТАРЫМ
+/// паролям не влияет — только на установку новых.
+pub fn validate_password(password: &str, login: &str) -> Result<(), String> {
+    let len = password.chars().count();
+    if len < 8 {
+        return Err(PASSWORD_RULE.to_string());
+    }
+    let has_letter = password.chars().any(|c| c.is_alphabetic());
+    let has_digit = password.chars().any(|c| c.is_ascii_digit());
+    if !has_letter || !has_digit {
+        return Err(PASSWORD_RULE.to_string());
+    }
+    if !login.is_empty() && password.to_lowercase() == login.trim().to_lowercase() {
+        return Err("Пароль не должен совпадать с логином".to_string());
+    }
+    Ok(())
+}
+
 /// Захэшировать пароль (argon2id со случайной солью).
 pub fn hash_password(password: &str) -> Result<String, String> {
     let salt = SaltString::generate(&mut OsRng);
@@ -87,6 +111,19 @@ fn now_secs() -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn password_strength_rules() {
+        // Слишком короткий / без цифр / без букв — отбой.
+        assert!(validate_password("a1", "u").is_err());
+        assert!(validate_password("abcdefgh", "u").is_err());
+        assert!(validate_password("12345678", "u").is_err());
+        // Совпадает с логином (без учёта регистра) — отбой.
+        assert!(validate_password("Uchenik75", "uchenik75").is_err());
+        // Нормальный — ок (буквы+цифры, ≥8).
+        assert!(validate_password("kniga2026", "u7a").is_ok());
+        assert!(validate_password("Читалка77", "u7a").is_ok()); // кириллица — тоже буквы
+    }
 
     #[test]
     fn password_hash_and_verify() {

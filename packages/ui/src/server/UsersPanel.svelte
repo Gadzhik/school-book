@@ -51,8 +51,17 @@
     return s.split(',').map((x) => x.trim()).filter(Boolean);
   }
 
+  // Клиентская пред-проверка силы пароля (авторитетная — на сервере).
+  function weakPassword(pw: string): boolean {
+    return pw.length < 8 || !/\p{L}/u.test(pw) || !/\d/.test(pw);
+  }
+
   async function submitCreate() {
-    if (!fullName.trim() || !login.trim() || password.length < 4) return;
+    if (!fullName.trim() || !login.trim()) return;
+    if (weakPassword(password)) {
+      usersError.set(tr('Пароль должен быть не короче 8 символов и содержать буквы и цифры'));
+      return;
+    }
     const ok = await createUser({
       fullName: fullName.trim(),
       login: login.trim(),
@@ -79,10 +88,12 @@
   }
 
   async function onResetPw(id: string, name: string) {
-    const pw = prompt(tr('Новый пароль для «{0}» (минимум 4 символа):', name));
+    const pw = prompt(
+      tr('Новый пароль для «{0}» (не короче 8 символов, обязательно буквы и цифры):', name)
+    );
     if (pw === null) return;
-    if (pw.length < 4) {
-      usersError.set(tr('Пароль минимум 4 символа'));
+    if (weakPassword(pw)) {
+      usersError.set(tr('Пароль должен быть не короче 8 символов и содержать буквы и цифры'));
       return;
     }
     const err = await resetPassword(id, pw);
@@ -118,9 +129,10 @@
       <input
         type="password"
         bind:value={password}
-        placeholder={$t('Пароль (мин. 4)')}
+        placeholder={$t('Пароль')}
         autocomplete="new-password"
       />
+      <p class="pw-hint">{$t('Не короче 8 символов, обязательно буквы и цифры, не совпадает с логином.')}</p>
       <select bind:value={role}>
         {#each roles as r (r)}
           <option value={r}>{$t(ROLE_LABEL[r])}</option>
@@ -290,6 +302,11 @@
   }
   .error {
     color: #c0392b;
+  }
+  .pw-hint {
+    color: var(--muted);
+    margin: -0.2rem 0 0;
+    font-size: 0.78rem;
   }
   .primary {
     border: none;

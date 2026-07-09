@@ -11,11 +11,17 @@
   let error = $state('');
   let done = $state(false);
 
+  // Клиентская пред-проверка силы пароля (авторитетная — на сервере,
+  // включая сравнение с логином): ≥8 символов, есть буквы и цифры.
+  function weakPassword(pw: string): boolean {
+    return pw.length < 8 || !/\p{L}/u.test(pw) || !/\d/.test(pw);
+  }
+
   async function submit() {
     error = '';
     done = false;
-    if (newPw.length < 4) {
-      error = tr('Новый пароль минимум 4 символа');
+    if (weakPassword(newPw)) {
+      error = tr('Пароль должен быть не короче 8 символов и содержать буквы и цифры');
       return;
     }
     if (newPw !== newPw2) {
@@ -55,9 +61,10 @@
       <input
         type="password"
         bind:value={newPw}
-        placeholder={$t('Новый пароль (мин. 4)')}
+        placeholder={$t('Новый пароль')}
         autocomplete="new-password"
       />
+      <p class="hint">{$t('Не короче 8 символов, обязательно буквы и цифры, не совпадает с логином.')}</p>
       <input
         type="password"
         bind:value={newPw2}
@@ -120,6 +127,11 @@
     color: #c0392b;
     margin: 0;
     font-size: 0.85rem;
+  }
+  .hint {
+    color: var(--muted);
+    margin: -0.2rem 0 0;
+    font-size: 0.78rem;
   }
   .ok {
     color: #2e7d32;

@@ -115,7 +115,7 @@ impl Config {
             library: PathBuf::from(env_or("CHITALKA_LIBRARY", "./library")),
             db_path: PathBuf::from(env_or("CHITALKA_DB", "./chitalka.db")),
             token: std::env::var("CHITALKA_TOKEN").ok().filter(|t| !t.is_empty()),
-            name: env_or("CHITALKA_NAME", "Читалка"),
+            name: env_or("CHITALKA_NAME", "Школьная библиотека"),
             explicit_port: std::env::var("CHITALKA_PORT")
                 .ok()
                 .and_then(|s| s.trim().parse::<u16>().ok()),
@@ -619,12 +619,11 @@ fn current_user(st: &AppState, headers: &HeaderMap) -> Option<User> {
 /// Регистрация (ТЗ 6.2). Первый пользователь — администратор (бутстрап);
 /// остальные — teacher/student со статусом «ожидает». Возвращает JWT + профиль.
 async fn register(State(st): State<Arc<AppState>>, Json(req): Json<RegisterReq>) -> Response {
-    if req.full_name.trim().is_empty() || req.login.trim().is_empty() || req.password.len() < 4 {
-        return (
-            StatusCode::BAD_REQUEST,
-            "Укажите имя, логин и пароль (минимум 4 символа)",
-        )
-            .into_response();
+    if req.full_name.trim().is_empty() || req.login.trim().is_empty() {
+        return (StatusCode::BAD_REQUEST, "Укажите имя, логин и пароль").into_response();
+    }
+    if let Err(msg) = auth::validate_password(&req.password, &req.login) {
+        return (StatusCode::BAD_REQUEST, msg).into_response();
     }
 
     // Бутстрап: самый первый аккаунт становится администратором.
@@ -1062,12 +1061,11 @@ async fn create_user_admin(
     if !can_assign_role(&me, role) {
         return (StatusCode::FORBIDDEN, "Недостаточно прав для этой роли").into_response();
     }
-    if req.full_name.trim().is_empty() || req.login.trim().is_empty() || req.password.len() < 4 {
-        return (
-            StatusCode::BAD_REQUEST,
-            "Укажите имя, логин и пароль (минимум 4 символа)",
-        )
-            .into_response();
+    if req.full_name.trim().is_empty() || req.login.trim().is_empty() {
+        return (StatusCode::BAD_REQUEST, "Укажите имя, логин и пароль").into_response();
+    }
+    if let Err(msg) = auth::validate_password(&req.password, &req.login) {
+        return (StatusCode::BAD_REQUEST, msg).into_response();
     }
     let pw_hash = match auth::hash_password(&req.password) {
         Ok(h) => h,
@@ -1202,8 +1200,8 @@ async fn change_my_password(
     if !auth::verify_password(&req.old_password, &me.pw_hash) {
         return (StatusCode::FORBIDDEN, "Неверный текущий пароль").into_response();
     }
-    if req.new_password.len() < 4 {
-        return (StatusCode::BAD_REQUEST, "Пароль минимум 4 символа").into_response();
+    if let Err(msg) = auth::validate_password(&req.new_password, &me.login) {
+        return (StatusCode::BAD_REQUEST, msg).into_response();
     }
     let pw_hash = match auth::hash_password(&req.new_password) {
         Ok(h) => h,
@@ -1240,14 +1238,14 @@ async fn reset_user_password(
     if me.status != UserStatus::Active {
         return StatusCode::FORBIDDEN.into_response();
     }
-    if req.new_password.len() < 4 {
-        return (StatusCode::BAD_REQUEST, "Пароль минимум 4 символа").into_response();
-    }
     let target = match st.db.user_by_id(&id) {
         Ok(Some(u)) => u,
         Ok(None) => return StatusCode::NOT_FOUND.into_response(),
         Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     };
+    if let Err(msg) = auth::validate_password(&req.new_password, &target.login) {
+        return (StatusCode::BAD_REQUEST, msg).into_response();
+    }
     // Свой пароль меняем только через /api/me/password (с текущим паролем).
     if me.id == target.id {
         return (StatusCode::BAD_REQUEST, "Свой пароль меняйте через смену пароля").into_response();
