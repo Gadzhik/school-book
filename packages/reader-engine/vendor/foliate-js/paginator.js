@@ -92,6 +92,12 @@ const getBoundingClientRect = target => {
 }
 
 const getVisibleRange = (doc, start, end, mapRect) => {
+    // Патч: документ страницы может быть ещё не разобран (<body> нет) —
+    // тогда createTreeWalker падал с «parameter 1 is not of type 'Node'»
+    // внутри промиса, то есть необработанным отказом. Отдаём пустой диапазон,
+    // чтобы вызывающие получили привычный Range, а не null.
+    // Найдено журналом приложения 2026-07-30.
+    if (!doc?.body) return doc?.createRange ? doc.createRange() : null
     // first get all visible nodes
     const acceptNode = node => {
         const name = node.localName?.toLowerCase()
@@ -203,6 +209,11 @@ const makeMarginals = (length, part) => Array.from({ length }, () => {
 })
 
 const setStylesImportant = (el, styles) => {
+    // Патч: элемента может не быть (документ iframe ещё грузится или уже
+    // отвязан) — раньше это роняло «Cannot destructure property 'style' of
+    // 'el' as it is null» из колбэка ResizeObserver. Найдено журналом
+    // приложения 2026-07-30.
+    if (!el) return
     const { style } = el
     for (const [k, v] of Object.entries(styles)) style.setProperty(k, v, 'important')
 }
@@ -285,7 +296,9 @@ class View {
     render(layout) {
         // Патч: после закрытия книги iframe отвязан (contentDocument = null),
         // а отложенные колбэки ResizeObserver ещё прилетают — не рендерим.
-        if (!layout || !this.document) return
+        // Плюс момент, когда документ уже есть, а <body> ещё не разобран:
+        // columnize/scrolled сразу дёргают doc.body и падали на null.
+        if (!layout || !this.document?.documentElement || !this.document.body) return
         this.#column = layout.flow !== 'scrolled'
         this.#layout = layout
         if (this.#column) this.columnize(layout)
@@ -362,8 +375,9 @@ class View {
         }
     }
     expand() {
-        // Патч: см. render() — защита от колбэков после отвязки iframe.
-        if (!this.document) return
+        // Патч: см. render() — защита от колбэков после отвязки iframe
+        // и до появления documentElement/body в загружаемом документе.
+        if (!this.document?.documentElement || !this.document.body) return
         const { documentElement } = this.document
         if (this.#column) {
             const side = this.#vertical ? 'height' : 'width'

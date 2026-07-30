@@ -917,3 +917,114 @@
        контрольную строку искать листанием назад либо с чистого профиля.
   - Косметика: `icon.svg` попадает в precache-манифест дважды (из `includeAssets`
     и из глоба) — 58 записей при 57 уникальных, на офлайн не влияет.
+
+- **2026-07-30 (Windows, gkurb): журнал приложения во всех сборках + сбор логов
+  на сервере.** По просьбе владельца: приложение должно писать подробный лог,
+  а логи — попадать ко мне для разбора ошибок.
+  - **Ядро — `packages/core/src/logger.ts`** (один механизм на веб, десктоп и
+    Android: это один и тот же Svelte-код в браузере/WebView). Уровни
+    debug/info/warn/error, кольцевой буфер в памяти + персист в IndexedDB
+    (стор `logs`, **DB_VERSION 7**, вытеснение старше 5000 записей). Перехват
+    `window.onerror`, `unhandledrejection` и `console.error/warn` (чужой код —
+    foliate-js, pdf.js, tesseract — пишет туда напрямую). Контекст сессии:
+    платформа, версия, экран, язык, UA. Экспорт NDJSON, `takeForUpload(seq)`
+    для порционной отправки. Безопасная сериализация: ошибки разворачиваются
+    в имя/сообщение/стек, строки/массивы подрезаются, циклы не роняют.
+  - **Сервер — `POST /api/client-logs`** (открыт без авторизации: клиент падает
+    и до входа), пишет в `<CHITALKA_CLIENT_LOGS>/<дата>-<платформа>-<сессия>.ndjson`,
+    файл режется по 32 МБ, ≤5000 записей в пачке, тело ≤16 МБ. Ошибки уровня
+    error дополнительно поднимаются в лог сервера как `warn`. Плюс
+    `GET /api/client-logs` (список) и `/{file}` (скачать) — только админ.
+    Env `CHITALKA_CLIENT_LOGS` (по умолчанию `client-logs` рядом с БД);
+    десктоп задаёт путь в `server_ctl.rs`.
+  - **Отправка — `packages/ui/src/server/logs-sync.ts`**: раз в минуту, при
+    возврате сети, при уходе со страницы и через 3 с после каждой ошибки.
+    Маркер отправленного — `reader:logsSeq`, выключатель — `reader:logsSend`.
+    В настройках новая секция «Журнал приложения»: уровень, тумблер отправки,
+    «Скачать журнал» (NDJSON-файл, работает и без сервера), «Отправить сейчас»,
+    «Очистить».
+  - **Нативная часть Tauri** — `native_log.rs` (по копии в десктопе и мобилке,
+    только std, без новых крейтов): файл `native.log` в каталоге данных +
+    `std::panic::set_hook`. Паника Rust иначе не видна нигде (на Android —
+    только через adb). Команда `native_log_take` отдаёт файл и очищает его;
+    веб-слой при старте вливает эти строки в общий журнал
+    (`packages/adapters/src/native-log.ts`), откуда они уезжают на сервер.
+  - **Проверено вживую** (CDP, отдельный скрэтч-сервер 9791, чтобы не трогать
+    боевые данные): вход → импорт FB2 → ридер → отправка. В IndexedDB 8 записей,
+    `POST /api/client-logs` → 204, файл на сервере читается. Перехват сработал
+    всеми тремя путями: `window.onerror`, `unhandledrejection`, `console.error`.
+  - **И журнал сразу нашёл два настоящих бага в foliate-js** (вендор-патч
+    `packages/reader-engine/vendor/foliate-js/paginator.js`), оба — обращение к
+    `doc.body`, когда документ страницы ещё не разобран, из колбэка
+    ResizeObserver:
+    1. `setStylesImportant(doc.body …)` → `TypeError: Cannot destructure
+       property 'style' of 'el' as it is null` (paginator.js:206/335);
+    2. `doc.createTreeWalker(doc.body …)` → `Failed to execute
+       'createTreeWalker': parameter 1 is not of type 'Node'` (необработанный
+       отказ промиса).
+    Патч: guard в `setStylesImportant`, проверка `documentElement`+`body` в
+    `render()`/`expand()`, пустой Range из `getVisibleRange()`. После пересборки
+    обе ошибки исчезли — в журнале остались только специально подкинутые тестовые.
+  - **Собраны debug-версии:** web (`apps/web/dist`), десктоп
+    (`apps/desktop/src-tauri/target/debug/reader-desktop.exe`, 91,5 МБ,
+    запускается), Android APK arm64 —
+    `dist/android/chitalka-debug-arm64.apk` (99,2 МБ, allowBackup=false,
+    debuggable=true, ярлык по языку системы). Проверки: svelte-check 0/0,
+    tsc чисто, cargo check всех трёх крейтов чисто, vitest 21/21.
+  - ⚠️ **Грабли машины, всплывшие при сборке:**
+    1. **Windows Application Control всё ещё в принуждении:**
+       `UsermodeCodeIntegrityPolicyEnforcementStatus = 2`, хотя SAC в реестре
+       уже `0` — активные `.cip`-политики живут до **перезагрузки**. Симптомы:
+       release-сборка сервера падает (`getrandom` build-script → `os error 4551`,
+       следом ложное «can't find crate for thiserror_impl»); exe, **скопированный**
+       из `%TEMP%`, не запускается. При этом свежескомпилированный на месте
+       бинарь запускается нормально. Обход: собирать в каталог внутри репо
+       (`--target-dir target-logtest`), не копировать из `%TEMP%`.
+    2. **Нет прав на симлинки** (режим разработчика Windows выключен):
+       `tauri android build` падает на «symlinking lib … в jniLibs».
+       Обход, которым собран APK: `pnpm tauri android build --debug --apk
+       --target aarch64` (собирает `.so` с правильным линкером NDK) → руками
+       скопировать `.so` в `gen/android/app/src/main/jniLibs/arm64-v8a/` →
+       `gradlew.bat assembleArm64Debug -x :app:rustBuildArm64Debug`.
+       Прямой `cargo build --target aarch64-linux-android` не годится —
+       без env от Tauri CLI линкер `cc` не находится.
+    3. Инкрементальная упаковка gradle оставляет **старую `.so` мёртвым весом
+       внутри APK** (99 → 191 МБ): перед пересборкой чистить
+       `app/build/outputs/apk` и `app/build/intermediates/apk`.
+    4. Ручные патчи `gen/android` наложены заново (MainActivity без
+       `enableEdgeToEdge`, `allowBackup=false`, `values-en/strings.xml`).
+  - **Как этим пользоваться:** логи с устройств лежат в
+    `apps/server/data/client-logs/*.ndjson` (для боевого сервера) — по одному
+    файлу на сессию; читать `python -c` фильтром по `level == 'error'`.
+
+- **2026-07-30 (Windows, gkurb): смоук-прогон web-приложения в реальном Chrome
+  (CDP-драйвер, без Playwright).** Прод-сборка, отданная Rust-сервером на
+  скрэтч-данных (порт 9790, `CHITALKA_WEB=apps/web/dist`). Сценарий и скрипт —
+  `scratchpad/smoke/drive.mjs` (вне репо). Что подтверждено вживую:
+  - экран входа рисуется, сервер определяется сам по origin (autoConnectSameOrigin);
+  - вход `admin` → «Моя библиотека» с фасетным фильтром (классы/предметы/категории);
+  - импорт через настоящий `input[type=file]`: FB2 распознан по сигнатуре, «Добавлено: 1»,
+    на карточке метка FB2, заголовок и автор из `title-info`;
+  - ридер: титул рендерится, листание кнопками работает (23% → 64%), текст главы
+    вычитан из iframe книги — кириллица, кавычки и тире корректны, контрольная
+    строка на месте;
+  - перезагрузка: сессия (JWT), книга (IndexedDB `reader-db`) и **место чтения**
+    восстановлены; приложение открывается сразу на книге;
+  - **Service Worker: activated, precache 57/57 файлов** — офлайн-режим рабочий.
+  - Ошибок консоли в чистом прогоне: 0.
+  - ⚠️ Грабля инструментов, не приложения: у Chrome на длинном пути профиля
+    (`--user-data-dir` в scratchpad, ~150 симв.) **CacheStorage падает с
+    «Unexpected internal error»**, SW зависает в `activating`, `getRegistrations()`
+    отдаёт 0 — легко принять за неработающий офлайн. На коротком пути
+    (`C:\Users\gkurb\swp`) SW активируется за ~1 с. IndexedDB при этом работает.
+  - ⚠️ Наблюдение (не воспроизвелось в чистом прогоне): при выходе из ридера дважды
+    вылетало `TypeError: Cannot read properties of null (reading 'defaultView')` в
+    `vendor/foliate-js/paginator.js:190 getBackground` (через :1117) — та же семья,
+    что и пофиксенный 2026-07-09 teardown в `fixed-layout.js`, но для перетекаемых
+    книг. Кандидат на такой же guard, если поймается снова.
+  - `GET /api/update` даёт 404, когда в библиотеке нет `_updates` — приложение это
+    переживает («обновлений нет»), но в консоли остаётся запись.
+  - Правка `apps/web/vite.config.ts`: `includeManifestIcons: false` — `icon.svg`
+    попадал в precache-манифест дважды (58 записей при 57 уникальных: из иконок
+    манифеста и из `globPatterns **/*.svg`). На установку SW это не влияло,
+    правка косметическая.

@@ -77,6 +77,9 @@ pub async fn start_server(
         // Обновления приложения (manifest.json + APK/инсталляторы) — рядом с
         // библиотекой; админ кладёт файлы сюда, клиенты видят «Доступно обновление».
         updates: base.join("library").join("_updates"),
+        // Журналы клиентов (в т.ч. этого же десктопа и телефонов класса) —
+        // в каталоге данных приложения, рядом с БД.
+        client_logs: base.join("client-logs"),
     };
 
     let handle = start(cfg).await.map_err(|e| e.to_string())?;

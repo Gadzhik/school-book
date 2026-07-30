@@ -50,7 +50,13 @@ export default defineConfig({
     }),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['icon.svg'],
+      // Иконки манифеста в precache не добавляем: icon.svg уже попадает туда
+      // через globPatterns (**/*.svg), и из двух источников в манифесте
+      // получались ДВЕ записи с одинаковым ключом кэша (58 записей при 57
+      // уникальных). На установку Service Worker это не влияло — смоук-прогон
+      // 2026-07-30 на сборке ДО этой правки дал SW activated и рабочий офлайн,
+      // — правка чисто косметическая, чтобы манифест не дублировал запись.
+      includeManifestIcons: false,
       manifest: {
         name: 'Читалка для школьников',
         short_name: 'Читалка',

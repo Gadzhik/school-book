@@ -189,6 +189,15 @@ export interface BackupFile {
   modifiedMs: number;
 }
 
+/** Файл журнала клиента на сервере (`GET /api/client-logs`). */
+export interface ClientLogFile {
+  /** Имя файла: `<дата>-<платформа>-<сессия>.ndjson`. */
+  file: string;
+  size: number;
+  /** Время последней записи (мс эпохи). */
+  modified: number;
+}
+
 /** Уровень логирования сервера (лестница: каждый включает предыдущие). */
 export type LogLevel = 'error' | 'warn' | 'info' | 'debug' | 'verbose';
 

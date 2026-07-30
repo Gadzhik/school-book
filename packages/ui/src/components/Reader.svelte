@@ -14,6 +14,7 @@
     getHighlightByCfi,
     setHighlightNote,
     removeHighlight as deleteHighlightDb,
+    log,
     type BookMeta,
     type Bookmark,
     type Highlight,
@@ -350,6 +351,14 @@
       controller.setTypography(toTypography($settings));
       toc = controller.getToc();
       totalSections = controller.sectionCount;
+      log.info('reader', 'книга открыта', {
+        bookId,
+        формат: meta.format,
+        фиксированнаяВёрстка: controller.isFixedLayout,
+        разделов: totalSections,
+        пунктовОглавления: toc.length,
+        сСервера: !!meta.serverId,
+      });
       // Живая синхронизация: другое устройство сдвинуло позицию — предложим перейти.
       progressSocket = subscribeProgress(meta, (p) => (remoteContinue = p));
       // Оценка читаемости по видимому тексту (только перетекаемые книги, не PDF).
@@ -358,7 +367,12 @@
         if (sample.length >= 200) readability = readabilityScore(sample);
       }
     } catch (err) {
-      console.error(err);
+      log.error('reader', 'не удалось открыть книгу', {
+        bookId,
+        формат: bookMeta?.format,
+        название: bookMeta?.title,
+        err,
+      });
       error = tr('Не удалось открыть книгу. Возможно, формат не поддерживается.');
     } finally {
       loading = false;

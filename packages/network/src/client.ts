@@ -23,6 +23,7 @@ import type {
   BackupFile,
   BackupSettings,
   BackupSettingsInfo,
+  ClientLogFile,
   BookmarkSyncItem,
   HighlightSyncItem,
   LogLevel,
@@ -517,6 +518,21 @@ export class LibraryServerClient {
     fd.append('file', file);
     const res = await this.#fetch('/api/restore', { method: 'POST', body: fd }, 10 * 60_000);
     return (await res.json()) as { ok: boolean; message: string };
+  }
+
+  /**
+   * Отправить журнал приложения на сервер (диагностика).
+   * Маршрут открыт без авторизации: клиент падает и до входа в аккаунт,
+   * а такие логи как раз самые ценные. Ответ — 204 без тела.
+   */
+  async uploadLogs(context: unknown, entries: unknown[]): Promise<void> {
+    await this.#postJson<void>('/api/client-logs', { context, entries });
+  }
+
+  /** Список файлов журналов клиентов на сервере (только админ). */
+  async listClientLogs(): Promise<{ dir: string; files: ClientLogFile[] }> {
+    const res = await this.#fetch('/api/client-logs');
+    return (await res.json()) as { dir: string; files: ClientLogFile[] };
   }
 
   /**

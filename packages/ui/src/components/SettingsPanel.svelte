@@ -6,8 +6,17 @@
     ReadingFlow,
     ColumnCount,
   } from '@reader/core';
+  import {
+    setLogLevel,
+    getLogLevel,
+    exportLogsText,
+    clearLogs,
+    log,
+    type LogLevel,
+  } from '@reader/core';
   import { settings, patchSettings, readerIsFixedLayout } from '../stores';
   import { t, tr, locale, setLocale } from '../i18n';
+  import { flushLogs, logsUploadEnabled, setLogsUploadEnabled } from '../server/logs-sync';
   import Icon from './Icon.svelte';
 
   interface Props {
@@ -72,6 +81,82 @@
     { value: 1, label: '1 колонка' },
     { value: 2, label: '2 колонки' },
   ];
+
+  // --- Журнал приложения ---
+  const LEVEL_KEY = 'reader:logLevel';
+  let logLevel = $state<LogLevel>(getLogLevel());
+  let logsSend = $state(logsUploadEnabled());
+  let logsBusy = $state(false);
+  let logsMsg = $state('');
+
+  // Уровень храним в localStorage, а не в ReaderSettings: логгер стартует
+  // раньше базы настроек (нужно ловить и падения при её открытии), поэтому
+  // сохранённый уровень применяет точка входа приложения — здесь только показ
+  // текущего значения и его смена.
+
+  function applyLogLevel(level: LogLevel) {
+    logLevel = level;
+    setLogLevel(level);
+    try {
+      localStorage.setItem(LEVEL_KEY, level);
+    } catch {
+      /* ок */
+    }
+    log.info('settings', 'уровень журнала изменён', { уровень: level });
+  }
+
+  function toggleLogsSend(e: Event) {
+    const on = (e.currentTarget as HTMLInputElement).checked;
+    logsSend = on;
+    setLogsUploadEnabled(on);
+  }
+
+  /** Сохранить журнал файлом — работает и без сервера (веб, десктоп, Android). */
+  async function downloadLogs() {
+    if (logsBusy) return;
+    logsBusy = true;
+    logsMsg = '';
+    try {
+      const text = await exportLogsText();
+      const blob = new Blob([text], { type: 'application/x-ndjson' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `chitalka-log-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.ndjson`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 10_000);
+      logsMsg = tr('Файл журнала сохранён.');
+    } catch (e) {
+      logsMsg = e instanceof Error ? e.message : tr('Не удалось сохранить журнал');
+    } finally {
+      logsBusy = false;
+    }
+  }
+
+  async function sendLogs() {
+    if (logsBusy) return;
+    logsBusy = true;
+    logsMsg = '';
+    try {
+      const n = await flushLogs(true);
+      logsMsg = n
+        ? tr('Отправлено записей: {0}', n)
+        : tr('Отправлять нечего или сервер недоступен.');
+    } finally {
+      logsBusy = false;
+    }
+  }
+
+  async function wipeLogs() {
+    if (logsBusy) return;
+    logsBusy = true;
+    try {
+      await clearLogs();
+      logsMsg = tr('Журнал очищен.');
+    } finally {
+      logsBusy = false;
+    }
+  }
 </script>
 
 <aside class="panel" aria-label={$t('Настройки чтения')}>
@@ -411,6 +496,46 @@
           : $t('Скачать словарь с сервера')}
     </button>
     {#if dictMsg}<p class="hint">{dictMsg}</p>{/if}
+  </section>
+
+  <section>
+    <h3>{$t('Журнал приложения')}</h3>
+    <p class="hint">
+      {$t(
+        'Приложение записывает свои действия и ошибки. Журнал нужен, чтобы разобраться, почему что-то не открылось или не сохранилось.',
+      )}
+    </p>
+    <div class="chips">
+      <button
+        class="chip"
+        class:active={logLevel === 'debug'}
+        onclick={() => applyLogLevel('debug')}
+      >
+        {$t('Подробно')}
+      </button>
+      <button class="chip" class:active={logLevel === 'info'} onclick={() => applyLogLevel('info')}>
+        {$t('Обычно')}
+      </button>
+      <button class="chip" class:active={logLevel === 'warn'} onclick={() => applyLogLevel('warn')}>
+        {$t('Только проблемы')}
+      </button>
+    </div>
+    <label class="toggle">
+      <input type="checkbox" checked={logsSend} onchange={toggleLogsSend} />
+      <span>{$t('Отправлять журнал на школьный сервер')}</span>
+    </label>
+    <div class="chips">
+      <button class="chip" onclick={downloadLogs} disabled={logsBusy}>
+        {$t('Скачать журнал')}
+      </button>
+      <button class="chip" onclick={sendLogs} disabled={logsBusy}>
+        {$t('Отправить сейчас')}
+      </button>
+      <button class="chip" onclick={wipeLogs} disabled={logsBusy}>
+        {$t('Очистить')}
+      </button>
+    </div>
+    {#if logsMsg}<p class="hint">{logsMsg}</p>{/if}
   </section>
 </aside>
 
