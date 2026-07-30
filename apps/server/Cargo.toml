@@ -37,3 +37,21 @@ argon2 = "0.5"
 jsonwebtoken = "9"
 uuid = { version = "1", features = ["v4"] }
 rand_core = { version = "0.6", features = ["getrandom"] }
+
+# --- Вес target/ (см. scripts/limit-build-space.ps1) ---
+# Основной вклад в размер dev-сборки давала отладочная информация зависимостей
+# (target/debug/deps ≈ 1 ГБ). Своему коду оставляем номера строк — паники и
+# бэктрейсы остаются читаемыми, — а у зависимостей, proc-макросов и build-скриптов
+# debug-инфу выключаем полностью.
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false
+
+[profile.dev.build-override]
+debug = false
+
+# Релиз раздаётся как готовый exe — символы не нужны.
+[profile.release]
+strip = true

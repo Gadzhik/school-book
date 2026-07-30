@@ -39,3 +39,15 @@ opt-level = "z"     # оптимизация под размер
 lto = true          # межмодульная оптимизация (мельче код)
 codegen-units = 1   # лучше оптимизация/размер (медленнее сборка)
 panic = "abort"     # без раскрутки стека — меньше кода
+
+# --- Вес target/ (см. scripts/limit-build-space.ps1) ---
+# Android собирается под несколько ABI, и debug-инфа зависимостей множится на
+# каждый таргет. Своему коду оставляем номера строк, зависимостям — нет.
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false
+
+[profile.dev.build-override]
+debug = false

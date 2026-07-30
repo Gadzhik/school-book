@@ -12,7 +12,9 @@
     "web:build": "pnpm --filter @reader/web build",
     "web:preview": "pnpm --filter @reader/web preview",
     "check": "turbo run check",
-    "test": "vitest run"
+    "test": "vitest run",
+    "space": "pwsh -NoProfile -File scripts/limit-build-space.ps1",
+    "space:report": "pwsh -NoProfile -File scripts/limit-build-space.ps1 -Report"
   },
   "devDependencies": {
     "fake-indexeddb": "^6.0.0",
