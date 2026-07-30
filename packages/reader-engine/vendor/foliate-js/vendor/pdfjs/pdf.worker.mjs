@@ -1,3 +1,48 @@
+/* ПАТЧ ЧИТАЛКИ: полифиллы для старых WebView (см. apps/web/src/main.ts).
+   Вендорённый pdf.js собран под свежий движок: без этих методов PDF не
+   открывается на Android System WebView старше Chrome 128/140.
+   Найдено журналом приложения 2026-07-30. */
+(() => {
+  const def = (obj, name, value) => {
+    if (typeof obj[name] !== 'function') {
+      Object.defineProperty(obj, name, { value, writable: true, configurable: true });
+    }
+  };
+  def(Promise, 'try', function (fn, ...args) {
+    return new Promise((resolve) => resolve(fn(...args)));
+  });
+  def(Promise, 'withResolvers', function () {
+    let resolve, reject;
+    const promise = new Promise((res, rej) => { resolve = res; reject = rej; });
+    return { promise, resolve, reject };
+  });
+  const HEX = '0123456789abcdef';
+  def(Uint8Array.prototype, 'toHex', function () {
+    let out = '';
+    for (const b of this) out += HEX[b >> 4] + HEX[b & 15];
+    return out;
+  });
+  def(Uint8Array.prototype, 'toBase64', function () {
+    let bin = '';
+    for (const b of this) bin += String.fromCharCode(b);
+    return btoa(bin);
+  });
+  def(Uint8Array, 'fromBase64', function (s) {
+    const bin = atob(s);
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  });
+  const getOrInsertComputed = function (key, compute) {
+    if (this.has(key)) return this.get(key);
+    const value = compute(key);
+    this.set(key, value);
+    return value;
+  };
+  def(Map.prototype, 'getOrInsertComputed', getOrInsertComputed);
+  def(WeakMap.prototype, 'getOrInsertComputed', getOrInsertComputed);
+})();
+
 /**
  * @licstart The following is the entire license notice for the
  * JavaScript code in this page

@@ -34,6 +34,73 @@ if (!Array.prototype.at) {
   });
 }
 
+// Полифиллы современных методов для старых Android System WebView.
+// Вендорённый pdf.js собран под свежий движок и без них ЛЮБОЙ PDF не
+// открывается вовсе (ноль отрисованных страниц). Поймано журналом на
+// эмуляторе с WebView 124 (2026-07-30); на школьных телефонах со старым
+// WebView будет то же самое.
+//   Promise.try                  — Chrome 128 (pdf.mjs и pdf.worker.mjs)
+//   Promise.withResolvers        — Chrome 119
+//   Uint8Array.prototype.toHex   — Chrome 140 (pdf.worker.mjs)
+//   Uint8Array.prototype.toBase64 / Uint8Array.fromBase64 — Chrome 140
+// Тот же набор продублирован в начале `pdf.worker.mjs`: настоящий воркер —
+// отдельный контекст, полифиллы страницы туда не попадают.
+installModernApiPolyfills();
+
+function installModernApiPolyfills(): void {
+  const def = (obj: object, name: string, value: unknown) => {
+    if (typeof (obj as Record<string, unknown>)[name] !== 'function') {
+      Object.defineProperty(obj, name, { value, writable: true, configurable: true });
+    }
+  };
+
+  // fn зовётся синхронно, исключение становится отклонённым промисом.
+  def(Promise, 'try', function pTry<T>(fn: (...a: unknown[]) => T, ...args: unknown[]) {
+    return new Promise((resolve) => resolve(fn(...args) as Awaited<T>));
+  });
+
+  def(Promise, 'withResolvers', function withResolvers<T>() {
+    let resolve!: (v: T | PromiseLike<T>) => void;
+    let reject!: (e?: unknown) => void;
+    const promise = new Promise<T>((res, rej) => {
+      resolve = res;
+      reject = rej;
+    });
+    return { promise, resolve, reject };
+  });
+
+  const HEX = '0123456789abcdef';
+  def(Uint8Array.prototype, 'toHex', function toHex(this: Uint8Array) {
+    let out = '';
+    for (const b of this) out += HEX[b >> 4] + HEX[b & 15];
+    return out;
+  });
+
+  def(Uint8Array.prototype, 'toBase64', function toBase64(this: Uint8Array) {
+    let bin = '';
+    for (const b of this) bin += String.fromCharCode(b);
+    return btoa(bin);
+  });
+
+  def(Uint8Array, 'fromBase64', function fromBase64(s: string) {
+    const bin = atob(s);
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  });
+
+  // Map/WeakMap.getOrInsertComputed — самый свежий из набора (pdf.js зовёт его
+  // 15 раз). Есть ключ — отдаём значение, нет — вычисляем колбэком и кладём.
+  const getOrInsertComputed = function <K, V>(this: Map<K, V>, key: K, compute: (k: K) => V): V {
+    if (this.has(key)) return this.get(key) as V;
+    const value = compute(key);
+    this.set(key, value);
+    return value;
+  };
+  def(Map.prototype, 'getOrInsertComputed', getOrInsertComputed);
+  def(WeakMap.prototype, 'getOrInsertComputed', getOrInsertComputed);
+}
+
 // Журнал приложения — включаем ПЕРВЫМ делом, до любой другой инициализации:
 // иначе падение на старте (миграция БД, отсутствие OPFS, битая настройка)
 // не попадёт в журнал, а это как раз самые важные ошибки. Один и тот же код
