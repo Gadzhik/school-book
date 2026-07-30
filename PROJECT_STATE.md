@@ -800,3 +800,86 @@
   apps/web/dist и dist/server/web (guard contentDocument, count=4); внутри APK
   web зашит в .so (brotli) — провенанс: beforeBuild пересобрал web из
   закоммиченного vendor-фикса. dist/ — gitignored, в репо только исходники.
+
+- **2026-07-30 (Windows, новая машина gkurb): развёрнут свежий клон + весь тулчейн.**
+  Репо клонировано в `C:\Users\gkurb\ai_dev\school-book` (учти: в CLAUDE.md указан
+  старый путь `C:\ai_dev\school_book` и пользователь `igadzhi`).
+  - **JS:** pnpm 10.20.0 поставлен через `npm i -g` (`corepack enable` падает с EPERM —
+    нет прав на `C:\Program Files\nodejs`). Node здесь **v24.18.0** (в CLAUDE.md
+    зафиксирован 22.21.0) — `pnpm install`, vitest 21/21, svelte-check 577/0/0,
+    network `tsc --noEmit` чисто, `pnpm web:dev` (5173) и `pnpm web:build` (PWA, 58
+    precache) прошли без правок. Ignored build scripts (canvas, tesseract.js) —
+    как задумано в `onlyBuiltDependencies`.
+  - **Rust:** rustup, stable-msvc 1.97.1 + android-таргеты; VS 2022 BuildTools
+    (VCTools + Windows SDK 10.0.26100 + C++ CMake tools). `cargo check` сервера,
+    десктопа и мобильного крейта — чисто; `cargo test` сервера **13/13**.
+    Сервер поднят на скрэтч-БД (порт 9788): `/status` ok, `/opds` 200, mDNS-анонс,
+    web-UI раздаётся из `../web/dist`. Данные проекта не тронуты.
+  - ⚠️ **Грабля машины: Windows Smart App Control был включён** и ронял cargo
+    (`An Application Control policy has blocked this file. (os error 4551)` на
+    build-скрипте `serde_core`). По решению владельца отключён:
+    `HKLM:\SYSTEM\CurrentControlSet\Control\CI\Policy` →
+    `VerifiedAndReputablePolicyState = 0`. Подействовало без перезагрузки, но
+    артефакты, собранные до этого, могли остаться битыми: `tauri` не находил
+    proc-macro `serde_repr` → вылечило `cargo clean -p serde_repr`.
+  - **Android:** JDK 21 (`C:\Users\gkurb\Android\jdk-21.0.12+8`, `JAVA_HOME`),
+    SDK в `%LOCALAPPDATA%\Android\Sdk` (`ANDROID_HOME`): platform-tools,
+    platforms 34/35/36, build-tools 34/35/36, emulator, **NDK 27.2.12479018**
+    (`NDK_HOME`). `tauri android init` выполнен заново — `gen/android`
+    сгенерирован с нуля (compileSdk/targetSdk 36, minSdk 24).
+    ⚠️ Ручные патчи из записи 2026-07-09 (MainActivity без `enableEdgeToEdge`,
+    `allowBackup=false`, `values-en`) в новом `gen/android` **отсутствуют** —
+    папка gitignored. Перед сборкой APK на этой машине их надо наложить снова.
+  - **Flutter 3.44.8 + Dart 3.12.2** (`C:\Users\gkurb\flutter`) — по отдельной
+    просьбе владельца, к этому проекту не относится. `flutter doctor` — всё зелёное.
+  - ⚠️ ТЗ `chitalka_promt_i_tehplan.md` (gitignored) на этой машине **отсутствует** —
+    источник истины по требованиям надо перенести вручную.
+
+- **2026-07-30 (Windows, gkurb): dev-сервер на IPv4 + лимит на вес сборок.**
+  - **`localhost:5173` не открывался в Firefox.** Vite по умолчанию слушает
+    «localhost», а Node на Windows разрешает его в IPv6 `::1` — браузер,
+    который идёт на `127.0.0.1`, получал «Unable to connect» (curl через `::1`
+    при этом отдавал 200). В `apps/web/vite.config.ts` у `server` явно задан
+    `host: '127.0.0.1'`; оба адреса теперь отвечают 200. Для проверки с
+    телефона в сети — запускать с `--host`.
+  - **Вес сборок ограничен.** Замер до: dev-таргеты Rust 4.05 ГБ, кэш Gradle
+    3.24 ГБ (из них `caches/9.1.0` 1.9 ГБ + `wrapper/dists` 0.67 ГБ),
+    crates.io 0.54 ГБ.
+    1. В трёх крейтах добавлены `[profile.dev]`: своему коду
+       `debug = "line-tables-only"`, зависимостям / proc-макросам /
+       build-скриптам — `debug = false`; серверу и десктопу в `[profile.release]`
+       добавлен `strip = true` (у мобилки был). Проверено на одинаковой нагрузке
+       (`cargo check` + `cargo test` сервера): **1.88 → 0.86 ГБ**. Тесты 13/13,
+       все три крейта компилируются. На `cargo check` в одиночку эффекта нет
+       (там метаданные, не debug-инфа) — выигрыш в реальных сборках.
+    2. Новый `scripts/limit-build-space.ps1`: считает вес сборочных каталогов
+       и при превышении `-MaxGb` (10) чистит до `-TargetGb` (5) по шагам —
+       incremental → кэши Gradle (`caches/<версия>`, build-cache, старые
+       дистрибутивы) → `gen/android/app/build` + `.turbo` → `cargo clean` dev →
+       release → скачиваемое (`modules-2`, `registry`). Пересчёт после каждого
+       шага, лог `scripts/limit-build-space.log`. Не трогает исходники, `dist/`,
+       данные сервера, node_modules, Android SDK/NDK.
+       Скрипты: `pnpm space`, `pnpm space:report`. Ежедневная задача планировщика
+       `school-book-limit-build-space` (03:30, без админа) зарегистрирована,
+       тестовый прогон — код 0.
+    3. У `scripts/clean-build-cache.ps1` корень репо теперь берётся от
+       `$PSScriptRoot` (был захардкожен `C:\ai_dev\school_book` и на этой машине
+       не работал). `cargo-sweep` не установлен — тот скрипт пропускает Rust-часть.
+  - ⚠️ Настоящей квоты на папку в NTFS нет (квоты только на том целиком), поэтому
+    лимит — «мягкий»: скрипт + задача планировщика. Пиковый момент внутри одной
+    длинной release-сборки этим не ограничить.
+  - Не сделано (по желанию владельца): NDK стоит два — 27.2 (`NDK_HOME`, Tauri) и
+    28.2 (доставил Flutter), 4.3 ГБ вместе. Консолидация на один освободит ~2.2 ГБ,
+    но требует проверки сборкой APK.
+
+- **2026-07-30: вторая ОС сменилась — Kubuntu удалён, теперь Omarchy (Arch).**
+  По словам владельца. Что из этого следует:
+  - `CLAUDE.md` обновлён: таблица тулчейна теперь «Windows ↔ Omarchy (Arch)» с
+    актуальными путями/версиями Windows-машины; записи про Kubuntu помечены как
+    исторические. Грабля с `pnpm install` на NTFS (ntfs3) оставлена — она про любой
+    Linux, а не только про Kubuntu.
+  - Тулчейн на Omarchy **не разворачивался**. При первом заходе туда: `pnpm install`,
+    rustup + android-таргеты, JDK 21, Android SDK/NDK — и описать раскладку в
+    `CLAUDE.md` и здесь.
+  - Ремоуты: локальный remote `ntfs` из схемы ext4↔NTFS больше не актуален,
+    синк только через `origin` (GitHub).

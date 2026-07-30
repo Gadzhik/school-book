@@ -1,7 +1,9 @@
 # CLAUDE.md — школьная читалка (cross-OS)
 
 Этот файл авто-загружается Claude Code в ЛЮБОЙ ОС при работе в этом репозитории.
-Он — точка входа для кросс-ОС преемственности (Windows ↔ Kubuntu). Личная
+Он — точка входа для кросс-ОС преемственности (Windows ↔ Linux; вторая ОС —
+**Omarchy** (Arch), с 2026-07-30; Kubuntu-раздел удалён, записи про него ниже и в
+журнале — историческая справка). Личная
 авто-память (`~/.claude/.../memory`) НЕ переносится между ОС: она привязана к пути
 проекта и своя на каждой машине. Поэтому состояние проекта живёт В РЕПО.
 
@@ -28,29 +30,31 @@
 
 ## Кросс-ОС: пути, тулчейн, окружение
 
-| | Windows (текущая) | Kubuntu |
+| | Windows (текущая) | Linux: Omarchy (Arch) |
 |---|---|---|
-| Корень проекта | `C:\ai_dev\school_book` | где склонирован (запускать Claude ИМЕННО там) |
-| Node | v22.21.0 | поставить тот же мажор (nvm) |
-| pnpm | 10.20.0 | `corepack enable` или npm i -g pnpm@10 |
-| Rust | 1.93.x | rustup, та же ветка |
-| Android SDK | `C:\Users\igadzhi\AppData\Local\Android\Sdk` | `~/Android/Sdk`, выставить `ANDROID_HOME`/`NDK_HOME` |
-| JDK | `C:\Program Files\Java\jdk-21` | jdk-21 пакетом, `JAVA_HOME` |
-| Shell | PowerShell | bash |
+| Корень проекта | `C:\Users\gkurb\ai_dev\school-book` (ранее `C:\ai_dev\school_book`) | где склонирован (запускать Claude ИМЕННО там) |
+| Node | v24.18.0 (ранее 22.21.0) | тот же мажор (nvm / `pacman -S nodejs`) |
+| pnpm | 10.20.0 (`npm i -g pnpm@10` — `corepack enable` падает с EPERM) | `corepack enable` или `pacman -S pnpm` |
+| Rust | 1.97.1 (rustup, stable-msvc) | rustup, та же ветка |
+| Android SDK | `C:\Users\gkurb\AppData\Local\Android\Sdk` (NDK 27.2.12479018) | `~/Android/Sdk`, выставить `ANDROID_HOME`/`NDK_HOME` |
+| JDK | `C:\Users\gkurb\Android\jdk-21.0.12+8` (`JAVA_HOME`) | jdk21-openjdk пакетом, `JAVA_HOME` |
+| Shell | PowerShell | bash/zsh |
 
-После клона на Kubuntu: `pnpm install`, `rustup target add` для Android-таргетов
+После клона на Linux: `pnpm install`, `rustup target add` для Android-таргетов
 (если собирать мобилку). Lock-файлы (`pnpm-lock.yaml`, `Cargo.lock`) — в репо, не
-бампать без нужды, чтобы версии не разъехались между ОС.
+бампать без нужды, чтобы версии не разъехались между ОС. На Omarchy тулчейн ещё
+не разворачивался — при первом заходе туда описать раскладку здесь и в журнале.
 
-> **⚠️ Kubuntu + NTFS-раздел (важно, читать перед `pnpm install`):** если репо лежит
+> **⚠️ Историческое (Kubuntu, ОС удалена 2026-07-30) — но грабля про NTFS актуальна
+> для любого Linux, включая Omarchy:** если репо лежит
 > на NTFS-разделе Windows (ntfs3), **`pnpm install` там ЗАВИСАЕТ** на линковке
 > node_modules (дедлок; проверено 2026-07-01). Rust/`cargo check` на ntfs3 при этом
 > работает. Решение: **JS-разработка идёт из ext4-копии `~/school_book`** (полный rsync
 > репо на ext4), а git/сервер/данные — в NTFS-папке. Синк — через git (`origin` GitHub +
 > локальный remote `ntfs`). Подробности и раскладка — в `PROJECT_STATE.md` (запись
-> 2026-07-01). Тулчейн Kubuntu уже поставлен: Node 22.21.0 (nvm), pnpm 10.20.0, Rust
-> 1.96.1, JDK-21 (`~/Android/jdk-*`), Android SDK/NDK (`~/Android/Sdk`) — env в
-> `~/.zshrc`/`~/.bashrc`.
+> 2026-07-01). Тулчейн того Kubuntu (Node 22.21.0 nvm, pnpm 10.20.0, Rust 1.96.1,
+> JDK-21 `~/Android/jdk-*`, Android SDK/NDK `~/Android/Sdk`, env в `~/.zshrc`) вместе
+> с ОС удалён — на Omarchy ставить заново.
 
 ## Рабочие правила (важно)
 
