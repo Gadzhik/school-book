@@ -4,7 +4,9 @@
 # - gen/android/app/build (Gradle): удаляется целиком, если не менялся 30+ дней.
 # Логи: scripts/clean-build-cache.log (перезаписывается при каждом запуске).
 
-$repo = 'C:\ai_dev\school_book'
+# Корень репо — от расположения самого скрипта (путь был захардкожен под первую
+# Windows-машину `C:\ai_dev\school_book` и ломался на других клонах).
+$repo = Split-Path -Parent $PSScriptRoot
 $log = Join-Path $repo 'scripts\clean-build-cache.log'
 $days = 30
 

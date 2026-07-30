@@ -81,6 +81,22 @@ pnpm --filter @reader/mobile ios:build     # сборка .ipa (release)
 cd apps/server && cargo run
 ```
 
+### Место под сборки (Windows)
+
+Сборочные кэши (target/ трёх Rust-крейтов, Gradle, crates.io) со временем разрастаются
+до десятков ГБ. Лимит держит `scripts/limit-build-space.ps1`:
+
+```powershell
+pnpm space:report                                   # что сколько занимает
+pnpm space                                          # чистить, если больше 10 ГБ (до 5 ГБ)
+pwsh -File scripts/limit-build-space.ps1 -InstallTask   # ежедневная проверка в 03:30
+```
+
+Удаляется только воссоздаваемое (incremental, кэши Gradle, debug/release-артефакты,
+архивы crates.io) — исходники, `dist/` и данные сервера не трогаются. Профили
+`[profile.dev]` в крейтах отключают debug-инфу зависимостей: dev-сборки весят
+примерно в три раза меньше.
+
 Подробно по мобильным сборкам (пререквизиты, iOS-подпись, симулятор) —
 `apps/mobile/README.md`. Сервер и его API — `apps/server/README.md`.
 

@@ -33,3 +33,19 @@ tokio = { version = "1", features = ["sync"] }
 [features]
 # Тихая консоль в релизе и т.п. при необходимости включается здесь.
 default = []
+
+# --- Вес target/ (см. scripts/limit-build-space.ps1) ---
+# То же, что в apps/server: debug-инфа зависимостей — главный вклад в размер
+# target/, своему коду оставляем номера строк.
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false
+
+[profile.dev.build-override]
+debug = false
+
+# Релиз идёт в инсталлятор — символы не нужны.
+[profile.release]
+strip = true
