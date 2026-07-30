@@ -13,3 +13,11 @@ export * from './theme';
 
 // Сессия пользователя (ТЗ Часть 6) — для гейтинга доступа в оболочке приложения.
 export { session, logout } from './server/auth';
+
+// Журнал приложения: фоновая отправка на школьный сервер (см. logs-sync.ts).
+export {
+  initLogSync,
+  flushLogs,
+  logsUploadEnabled,
+  setLogsUploadEnabled,
+} from './server/logs-sync';

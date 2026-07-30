@@ -11,6 +11,7 @@ import {
   saveSettings,
   setLlmConfig,
   DEFAULT_SETTINGS,
+  log,
   type BookMeta,
   type ReaderSettings,
 } from '@reader/core';
@@ -184,12 +185,20 @@ export async function addFiles(files: FileList | File[]): Promise<BookMeta[]> {
   const added: BookMeta[] = [];
   const preferPandoc = get(settings).pandocDocs;
   for (const file of Array.from(files)) {
+    const started = Date.now();
     try {
+      log.info('import', 'импорт файла', { имя: file.name, размер: file.size, тип: file.type });
       const res = await importFile(file, { preferPandoc });
       added.push(res.book);
       collectReview(res, review);
+      log.info('import', 'книга добавлена', {
+        имя: file.name,
+        формат: res.book.format,
+        id: res.book.id,
+        мс: Date.now() - started,
+      });
     } catch (err) {
-      console.error('Не удалось добавить файл', file.name, err);
+      log.error('import', 'не удалось добавить файл', { имя: file.name, размер: file.size, err });
     }
   }
   await refreshLibrary();
@@ -215,7 +224,11 @@ export async function importServerBook(file: File, serverId: string): Promise<vo
     await updateBook(res.book.id, { serverId });
     collectReview(res, review);
   } catch (err) {
-    console.error('Не удалось импортировать книгу с сервера', file.name, err);
+    log.error('import', 'не удалось импортировать книгу с сервера', {
+      имя: file.name,
+      serverId,
+      err,
+    });
     throw err;
   }
   await refreshLibrary();

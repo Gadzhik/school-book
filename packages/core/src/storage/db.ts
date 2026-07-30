@@ -7,8 +7,10 @@
  *   - categories : словарь категорий (тип материала)  [v2]
  *   - subjects   : словарь предметов (ФГОС)            [v2]
  *   - classes    : словарь учебных классов 1–11        [v2]
+ *   - logs       : журнал приложения (LogEntry)        [v7]
  */
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
+import type { LogEntry } from '../logger';
 import type {
   BookMeta,
   ReaderSettings,
@@ -24,7 +26,8 @@ const DB_NAME = 'reader-db';
 // v2: словари классификации (Часть 5). v3: «Мои слова» + карточки (Фаза 3).
 // v4: поле updatedAt у слов для синхронизации с сервером (Фаза 5).
 // v5: закладки в книгах (Часть 6, п.6.3). v6: выделения/заметки (Часть 6, E3).
-const DB_VERSION = 6;
+// v7: журнал приложения (см. ../logger.ts) — переживает перезагрузку страницы.
+const DB_VERSION = 7;
 
 interface ReaderDB extends DBSchema {
   books: {
@@ -66,6 +69,11 @@ interface ReaderDB extends DBSchema {
     key: string;
     value: Highlight;
     indexes: { 'by-book': string };
+  };
+  logs: {
+    key: number;
+    value: LogEntry;
+    indexes: { 'by-ts': number };
   };
 }
 
@@ -110,6 +118,12 @@ export function getDB(): Promise<IDBPDatabase<ReaderDB>> {
         if (oldVersion < 6) {
           const hl = db.createObjectStore('highlights', { keyPath: 'id' });
           hl.createIndex('by-book', 'bookId');
+        }
+        if (oldVersion < 7) {
+          // Журнал: ключ — автоинкремент, он же порядок записей и маркер
+          // отправки на сервер (см. takeForUpload в ../logger.ts).
+          const logs = db.createObjectStore('logs', { autoIncrement: true });
+          logs.createIndex('by-ts', 'ts');
         }
       },
     });

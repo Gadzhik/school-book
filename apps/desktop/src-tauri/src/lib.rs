@@ -2,6 +2,7 @@
 // хранилище (IndexedDB/OPFS) работает в системном WebView без изменений ядра.
 
 mod discovery;
+mod native_log;
 mod speech;
 // Встроенный сервер с GUI старт/стоп — только десктоп (см. server_ctl).
 #[cfg(desktop)]
@@ -18,6 +19,7 @@ pub fn run() {
         speech::tts_speak,
         speech::tts_stop,
         speech::tts_available,
+        native_log::native_log_take,
     ]);
 
     // На десктопе добавляем управление встроенным сервером (старт/стоп/статус).
@@ -32,9 +34,19 @@ pub fn run() {
             server_ctl::start_server,
             server_ctl::stop_server,
             server_ctl::server_status,
+            native_log::native_log_take,
         ]);
 
     builder
+        // Нативный журнал включаем первым делом: паника до этого места нигде
+        // не видна, а каталог данных известен только когда есть AppHandle.
+        .setup(|app| {
+            use tauri::Manager as _;
+            if let Ok(dir) = app.path().app_data_dir() {
+                native_log::init(dir, app.package_info().version.to_string().as_str());
+            }
+            Ok(())
+        })
         .run(tauri::generate_context!())
         .expect("ошибка при запуске приложения Tauri");
 }

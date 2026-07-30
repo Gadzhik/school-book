@@ -13,6 +13,8 @@
 //!   CHITALKA_UPDATES — папка обновлений приложения (manifest.json + APK/инсталляторы)
 //!   CHITALKA_ADMIN_LOGIN / CHITALKA_ADMIN_PASSWORD — встроенный админ при
 //!     пустой БД (по умолчанию admin/admin; пароль сменить после входа)
+//!   CHITALKA_CLIENT_LOGS — папка журналов клиентов (по умолчанию client-logs
+//!     рядом с файлом БД); туда пишет `POST /api/client-logs`
 
 mod auth;
 mod autotag;
@@ -76,6 +78,8 @@ struct AppState {
     backup_notify: tokio::sync::Notify,
     /// Троттлинг входа: login → счётчик неудач/время блокировки (анти-брутфорс).
     login_attempts: std::sync::Mutex<HashMap<String, LoginThrottle>>,
+    /// Папка журналов клиентов (веб/десктоп/Android шлют сюда свои логи).
+    client_logs: PathBuf,
 }
 
 /// Состояние анти-брутфорса для одного логина.
@@ -123,6 +127,9 @@ pub struct Config {
     pub admin_login: String,
     /// Пароль встроенного администратора (по умолчанию — сменить после входа!).
     pub admin_password: String,
+    /// Папка, куда складываются журналы клиентов (`POST /api/client-logs`).
+    /// По умолчанию — `client-logs` рядом с файлом БД.
+    pub client_logs: PathBuf,
 }
 
 impl Config {
@@ -157,6 +164,17 @@ impl Config {
                 .map(PathBuf::from)
                 .unwrap_or_else(|| {
                     PathBuf::from(env_or("CHITALKA_LIBRARY", "./library")).join("_updates")
+                }),
+            // Журналы клиентов кладём рядом с БД: там же данные сервера, и
+            // папку удобно смотреть/чистить целиком.
+            client_logs: std::env::var("CHITALKA_CLIENT_LOGS")
+                .ok()
+                .map(PathBuf::from)
+                .unwrap_or_else(|| {
+                    let db = PathBuf::from(env_or("CHITALKA_DB", "./chitalka.db"));
+                    db.parent()
+                        .map(|d| d.join("client-logs"))
+                        .unwrap_or_else(|| PathBuf::from("./client-logs"))
                 }),
         }
     }
@@ -264,6 +282,16 @@ fn build_router(state: Arc<AppState>, web_dir: Option<PathBuf>) -> Router {
         )
         // Уровень логирования сервера (админ): посмотреть/сменить на лету.
         .route("/api/log-level", get(get_log_level).put(put_log_level))
+        // Журналы клиентов (веб/десктоп/Android). Приём открыт намеренно:
+        // клиент падает и до входа в аккаунт, и такие логи нужнее всего.
+        // Список и скачивание — только админу.
+        .route(
+            "/api/client-logs",
+            get(list_client_logs)
+                .post(post_client_logs)
+                .layer(DefaultBodyLimit::max(16 * 1024 * 1024)),
+        )
+        .route("/api/client-logs/{file}", get(get_client_log_file))
         .route("/api/bookmarks", get(get_bookmarks).post(post_bookmarks))
         .route("/api/highlights", get(get_highlights).post(post_highlights))
         // Обновления приложения: манифест и файлы публичны (скачивание APK/
@@ -400,6 +428,7 @@ pub async fn start(cfg: Config) -> std::io::Result<ServerHandle> {
         db_path: cfg.db_path.clone(),
         backup_notify: tokio::sync::Notify::new(),
         login_attempts: std::sync::Mutex::new(HashMap::new()),
+        client_logs: cfg.client_logs.clone(),
     });
 
     match &cfg.web_dir {
@@ -2239,6 +2268,227 @@ async fn update_file(State(st): State<Arc<AppState>>, Path(file): Path<String>) 
         bytes,
     )
         .into_response()
+}
+
+// --- Журналы клиентов (веб / десктоп / Android) ---
+
+/// Пачка записей журнала с устройства.
+#[derive(Deserialize)]
+struct ClientLogsReq {
+    /// Контекст запуска клиента: платформа, версия, экран, UA, id сессии.
+    #[serde(default)]
+    context: serde_json::Value,
+    /// Записи журнала — пишем как есть, по одной JSON-строке в файл (NDJSON).
+    #[serde(default)]
+    entries: Vec<serde_json::Value>,
+}
+
+/// Максимум записей в одной пачке — защита от «клиент зациклился и льёт лог».
+const CLIENT_LOG_MAX_ENTRIES: usize = 5000;
+/// Максимальный размер одного файла журнала; дальше открывается следующий.
+const CLIENT_LOG_MAX_BYTES: u64 = 32 * 1024 * 1024;
+
+/// Оставить в имени файла только безопасные символы.
+fn sanitize_log_part(s: &str, fallback: &str) -> String {
+    let cleaned: String = s
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_')
+        .take(40)
+        .collect();
+    if cleaned.is_empty() {
+        fallback.to_string()
+    } else {
+        cleaned
+    }
+}
+
+/// Подобрать файл для записи: `<база>.ndjson`, а если он перерос лимит —
+/// `<база>-2.ndjson`, `-3` и так далее.
+fn client_log_path(dir: &std::path::Path, base: &str) -> PathBuf {
+    let first = dir.join(format!("{base}.ndjson"));
+    let fits = |p: &PathBuf| {
+        std::fs::metadata(p)
+            .map(|m| m.len() < CLIENT_LOG_MAX_BYTES)
+            .unwrap_or(true)
+    };
+    if fits(&first) {
+        return first;
+    }
+    for n in 2..1000 {
+        let p = dir.join(format!("{base}-{n}.ndjson"));
+        if fits(&p) {
+            return p;
+        }
+    }
+    first
+}
+
+/// Принять журнал с устройства и дописать его в файл.
+/// Файл — на сессию клиента: `<дата>-<платформа>-<сессия>.ndjson`.
+async fn post_client_logs(
+    State(st): State<Arc<AppState>>,
+    Json(req): Json<ClientLogsReq>,
+) -> Response {
+    if req.entries.is_empty() {
+        return StatusCode::NO_CONTENT.into_response();
+    }
+    if req.entries.len() > CLIENT_LOG_MAX_ENTRIES {
+        return (
+            StatusCode::PAYLOAD_TOO_LARGE,
+            format!("слишком много записей (максимум {CLIENT_LOG_MAX_ENTRIES})"),
+        )
+            .into_response();
+    }
+
+    let ctx = &req.context;
+    let str_field = |k: &str| ctx.get(k).and_then(|v| v.as_str()).unwrap_or("");
+    let platform = sanitize_log_part(str_field("platform"), "unknown");
+    // id сессии берём из контекста, иначе — из первой записи.
+    let session_raw = if str_field("session").is_empty() {
+        req.entries
+            .first()
+            .and_then(|e| e.get("session"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+    } else {
+        str_field("session")
+    };
+    let session = sanitize_log_part(session_raw, "nosession");
+    let date = chrono_like_date();
+    let base = format!("{date}-{platform}-{session}");
+
+    if std::fs::create_dir_all(&st.client_logs).is_err() {
+        tracing::warn!(
+            "не удалось создать папку журналов клиентов: {}",
+            st.client_logs.display()
+        );
+        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    }
+    let path = client_log_path(&st.client_logs, &base);
+
+    // Первая запись в новый файл — строка контекста: по ней потом понятно,
+    // что за устройство и версия прислали журнал.
+    let mut out = String::new();
+    if !path.exists() && !ctx.is_null() {
+        out.push_str(&serde_json::json!({ "kind": "context", "context": ctx }).to_string());
+        out.push('\n');
+    }
+    let mut errors = 0usize;
+    for e in &req.entries {
+        if e.get("level").and_then(|v| v.as_str()) == Some("error") {
+            errors += 1;
+        }
+        out.push_str(&e.to_string());
+        out.push('\n');
+    }
+
+    use std::io::Write as _;
+    let write_res = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+        .and_then(|mut f| f.write_all(out.as_bytes()));
+    if let Err(e) = write_res {
+        tracing::warn!("не удалось записать журнал клиента {}: {e}", path.display());
+        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    }
+
+    tracing::debug!(
+        "журнал клиента: {} записей ({platform}, сессия {session}) → {}",
+        req.entries.len(),
+        path.display()
+    );
+    // Ошибки клиента поднимаем в лог сервера — их видно без чтения файлов.
+    if errors > 0 {
+        tracing::warn!(
+            "клиент ({platform}, сессия {session}) прислал {errors} ошибок — см. {}",
+            path.display()
+        );
+    }
+    StatusCode::NO_CONTENT.into_response()
+}
+
+/// Список файлов журналов (админ): имя, размер, время изменения.
+async fn list_client_logs(State(st): State<Arc<AppState>>, headers: HeaderMap) -> Response {
+    if let Err(r) = require_admin(&st, &headers) {
+        return r;
+    }
+    let mut files: Vec<serde_json::Value> = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(&st.client_logs) {
+        for e in entries.flatten() {
+            let Ok(meta) = e.metadata() else { continue };
+            if !meta.is_file() {
+                continue;
+            }
+            let modified = meta
+                .modified()
+                .ok()
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or(0);
+            files.push(serde_json::json!({
+                "file": e.file_name().to_string_lossy(),
+                "size": meta.len(),
+                "modified": modified,
+            }));
+        }
+    }
+    // Свежие сверху.
+    files.sort_by(|a, b| {
+        b.get("modified")
+            .and_then(|v| v.as_u64())
+            .cmp(&a.get("modified").and_then(|v| v.as_u64()))
+    });
+    Json(serde_json::json!({
+        "dir": st.client_logs.display().to_string(),
+        "files": files,
+    }))
+    .into_response()
+}
+
+/// Скачать один файл журнала (админ).
+async fn get_client_log_file(
+    State(st): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Path(file): Path<String>,
+) -> Response {
+    if let Err(r) = require_admin(&st, &headers) {
+        return r;
+    }
+    // Только имя файла: защита от выхода из папки.
+    if file.contains("..") || file.contains('/') || file.contains('\\') || file.is_empty() {
+        return StatusCode::BAD_REQUEST.into_response();
+    }
+    match std::fs::read(st.client_logs.join(&file)) {
+        Ok(bytes) => (
+            [(header::CONTENT_TYPE, "application/x-ndjson; charset=utf-8")],
+            bytes,
+        )
+            .into_response(),
+        Err(_) => StatusCode::NOT_FOUND.into_response(),
+    }
+}
+
+/// Дата вида `2026-07-30` без внешних крейтов: считаем от эпохи по календарю
+/// (в имени файла нужна только группировка по дням, часовой пояс — UTC).
+fn chrono_like_date() -> String {
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0) as i64;
+    let days = secs.div_euclid(86_400);
+    // Алгоритм civil_from_days (Howard Hinnant): дни от 1970-01-01 → Y-M-D.
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z.rem_euclid(146_097);
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if m <= 2 { y + 1 } else { y };
+    format!("{y:04}-{m:02}-{d:02}")
 }
 
 /// WebSocket живой синхронизации прогресса. Токен — в query (?token=…):
