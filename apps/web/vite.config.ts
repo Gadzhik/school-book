@@ -149,5 +149,9 @@ export default defineConfig({
   resolve: {
     dedupe: ['svelte'],
   },
-  server: { port: 5173 },
+  // host: по умолчанию Vite слушает «localhost», а Node на Windows разрешает его
+  // в IPv6 ::1 — и браузеры, которые идут на 127.0.0.1 (например Firefox),
+  // получают «Unable to connect». Явный IPv4-loopback лечит это, оставаясь
+  // локальным. Для проверки с телефона в сети запускать с `--host`.
+  server: { port: 5173, host: '127.0.0.1' },
 });
