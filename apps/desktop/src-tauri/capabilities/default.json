@@ -3,5 +3,9 @@
   "identifier": "default",
   "description": "Базовые разрешения десктоп-оболочки",
   "windows": ["main"],
-  "permissions": ["core:default", "opener:default"]
+  "permissions": [
+    "core:default",
+    "opener:default",
+    "core:window:allow-set-title"
+  ]
 }

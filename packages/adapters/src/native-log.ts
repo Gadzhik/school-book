@@ -15,7 +15,12 @@ type Invoke = <T>(cmd: string, args?: Record<string, unknown>) => Promise<T>;
 function tauriInvoke(): Invoke | null {
   if (typeof window === 'undefined') return null;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return (window as any).__TAURI__?.core?.invoke ?? null;
+  const w = window as any;
+  // `window.__TAURI__` есть, только если в конфиге включён withGlobalTauri.
+  // На Android его не было — и весь мост молча не работал (проверено на
+  // эмуляторе 2026-07-30). Поэтому запасной путь — внутренний invoke,
+  // он есть в оболочке всегда.
+  return w.__TAURI__?.core?.invoke ?? w.__TAURI_INTERNALS__?.invoke ?? null;
 }
 
 /** Строка нативного журнала: `2026-07-30 15:31:02Z [error] ПАНИКА …`. */

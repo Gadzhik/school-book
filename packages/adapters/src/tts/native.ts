@@ -11,7 +11,11 @@ type Invoke = <T>(cmd: string, args?: Record<string, unknown>) => Promise<T>;
 function tauriInvoke(): Invoke | null {
   if (typeof window === 'undefined') return null;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return (window as any).__TAURI__?.core?.invoke ?? null;
+  const w = window as any;
+  // `window.__TAURI__` появляется только при withGlobalTauri в конфиге —
+  // на Android его не было, и нативный TTS молча считался недоступным
+  // (проверено на эмуляторе 2026-07-30). Запасной путь — внутренний invoke.
+  return w.__TAURI__?.core?.invoke ?? w.__TAURI_INTERNALS__?.invoke ?? null;
 }
 
 /** Доступен ли нативный TTS (есть Tauri и платформенный бэкенд). */

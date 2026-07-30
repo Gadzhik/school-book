@@ -997,6 +997,60 @@
     `apps/server/data/client-logs/*.ndjson` (для боевого сервера) — по одному
     файлу на сессию; читать `python -c` фильтром по `level == 'error'`.
 
+- **2026-07-30 (Windows, gkurb): Android-эмулятор + сервер — связка проверена
+  вживую, найдено и починено 3 бага.** По просьбе владельца. Перезагрузка машины
+  сняла блокировку Application Control (`UsermodeCodeIntegrityPolicyEnforcementStatus`
+  теперь 0) — новые бинари запускаются, release собирать можно.
+  - **Эмулятор развёрнут с нуля:** образа не было вообще. Поставлен
+    `system-images;android-35;google_apis;x86_64`, создан AVD **`chitalka_test`**
+    (профиль pixel_6). Android 15, WebView 124. Запуск:
+    `emulator -avd chitalka_test -no-snapshot-load -gpu swiftshader_indirect`.
+  - **Отладка WebView приложения** (то, чем гонял сценарий): в debug-сборке
+    доступен CDP — `adb forward tcp:9222 localabstract:webview_devtools_remote_<pid>`,
+    дальше обычный ws-клиент как в web-смоуках. Скрипты — в скрэтчпаде
+    (`drive-android*.mjs`).
+  - **Что подтверждено в связке приложение ↔ сервер** (сервер на хосте, из
+    эмулятора виден как `10.0.2.2:9700`): подключение и `/status`, вход,
+    гейт «смените пароль по умолчанию» (`POST /api/me/password` → 200),
+    каталог `/opds/all`, скачивание книги `GET /books/{id}/file` → 200,
+    открытие в ридере (кириллица и типографика в порядке, контент не под
+    системной панелью — патч `enableEdgeToEdge` работает), синхронизация
+    прогресса `PUT /api/progress/{id}` → 204, заметки класса, синк
+    слов/закладок/выделений — всё 200.
+  - **Журнал приложения доехал с телефона на сервер:**
+    `client-logs/2026-07-30-android-*.ndjson`, контекст `платформа=android`,
+    и в нём — запись из Rust (`[native] старт оболочки`), то есть цепочка
+    Rust → `native.log` → мост Tauri → IndexedDB → сервер работает целиком.
+  - **Баг 1 (важный): на Android не работал мост Tauri.** В
+    `apps/mobile/src-tauri/tauri.conf.json` не было `withGlobalTauri`, поэтому
+    `window.__TAURI__` не существовал (только `__TAURI_INTERNALS__`). Молча
+    ломалось всё, что ходит через `window.__TAURI__?.core?.invoke`: мой забор
+    нативного журнала И **давно живущий адаптер системного TTS**
+    (`packages/adapters/src/tts/native.ts`) — «Системный голос» на Android
+    просто ничего не делал. Починено дважды: `withGlobalTauri: true` в конфиг
+    мобилки (как у десктопа) и запасной путь `__TAURI_INTERNALS__.invoke`
+    в обоих адаптерах.
+  - **Баг 2: необработанный отказ промиса при смене языка.**
+    `packages/ui/src/i18n/index.ts` звал `setTitle()` через `void` — это ПРОМИС,
+    синхронный `try/catch` его отказ не ловит. Всплыло сразу, как заработал мост:
+    `window.set_title not allowed. Permissions associated with this command:
+    core:window:allow-set-title`. Починено: `.catch()` на промисе + право
+    `core:window:allow-set-title` добавлено в capabilities **обеих** оболочек
+    (на десктопе была та же дыра, просто её никто не видел).
+  - **Баг 3** — тот же, что нашёлся веб-прогоном: обращения к `doc.body` из
+    колбэка ResizeObserver в `paginator.js` (уже починено выше).
+  - **Сборка APK под эмулятор:** нужен x86_64 (arm64 на x86-образ не встанет).
+    Собирается тем же обходом, что и arm64 (симлинки по-прежнему требуют режима
+    разработчика Windows — перезагрузка это не изменила):
+    `pnpm tauri android build --debug --apk --target x86_64` → скопировать
+    `.so` в `jniLibs/x86_64/` → `gradlew.bat assembleX86_64Debug
+    -x :app:rustBuildX86_64Debug`. Перед пересборкой чистить
+    `app/build/{outputs,intermediates}/apk`, иначе старая `.so` остаётся
+    мёртвым весом в архиве.
+  - Проверки после правок: svelte-check 0/0, tsc чисто, cargo check чисто,
+    vitest 21/21. `dist/android/chitalka-debug-arm64.apk` пересобран со всеми
+    фиксами (99,2 МБ).
+
 - **2026-07-30 (Windows, gkurb): смоук-прогон web-приложения в реальном Chrome
   (CDP-драйвер, без Playwright).** Прод-сборка, отданная Rust-сервером на
   скрэтч-данных (порт 9790, `CHITALKA_WEB=apps/web/dist`). Сценарий и скрипт —

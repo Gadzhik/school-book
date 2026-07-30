@@ -45,10 +45,16 @@ locale.subscribe((l) => {
   const title = l === 'en' ? (en[APP_TITLE] ?? APP_TITLE) : APP_TITLE;
   document.title = title; // вкладка браузера / PWA
   try {
-    // Десктоп Tauri: заголовок нативного окна. На вебе/мобильном __TAURI__
-    // отсутствует или заголовка нет — тихо пропускаем.
+    // Оболочка Tauri (десктоп и Android): заголовок нативного окна.
+    // В вебе моста нет — тихо пропускаем.
+    // Важно: setTitle возвращает ПРОМИС, и его отказ (например, нет права
+    // core:window:allow-set-title) синхронный try/catch не ловит — раньше это
+    // всплывало необработанным отказом промиса. Гасим через .catch.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    void (window as any).__TAURI__?.window?.getCurrentWindow?.()?.setTitle?.(title);
+    const w = (window as any).__TAURI__?.window?.getCurrentWindow?.();
+    void Promise.resolve(w?.setTitle?.(title)).catch(() => {
+      /* нет права/не поддерживается — заголовок не критичен */
+    });
   } catch {
     /* ок */
   }
