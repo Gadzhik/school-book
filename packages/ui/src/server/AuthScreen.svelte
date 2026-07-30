@@ -159,13 +159,6 @@
     </div>
   {/if}
 
-  <div class="tabs">
-    <button class:active={mode === 'login'} onclick={() => (mode = 'login')}>{$t('Вход')}</button>
-    <button class:active={mode === 'register'} onclick={() => (mode = 'register')}
-      >{$t('Регистрация')}</button
-    >
-  </div>
-
   {#if mode === 'register'}
     <div class="roles">
       <label class:sel={role === 'student'}>
@@ -266,6 +259,17 @@
   {/if}
   {#if $authError}<p class="error">{$t($authError)}</p>{/if}
 
+  <!-- Переключатель режима стоит прямо над главной кнопкой формы: вкладок
+       «Вход | Регистрация» сверху больше нет (они путали — экран открывается
+       сразу на входе). В режиме регистрации эта же кнопка возвращает ко входу. -->
+  <button
+    type="button"
+    class="switch-mode"
+    onclick={() => (mode = mode === 'login' ? 'register' : 'login')}
+  >
+    {mode === 'login' ? $t('Регистрация') : $t('Вход')}
+  </button>
+
   <button class="primary" onclick={submit} disabled={$authBusy || $connecting}>
     {$connecting
       ? $t('Подключение…')
@@ -363,25 +367,19 @@
     font-weight: 600;
     color: var(--text);
   }
-  .tabs {
-    display: flex;
-    gap: 0.5rem;
-    margin-bottom: 1rem;
-  }
-  .tabs button {
-    flex: 1;
-    padding: 0.55rem;
+  /* Вторичная кнопка на всю ширину — под главной по размеру, но не по весу:
+     основное действие экрана одно, и это «Войти». */
+  .switch-mode {
+    width: 100%;
+    margin-bottom: 0.5rem;
+    padding: 0.6rem;
     border: 1px solid var(--border);
     border-radius: 9px;
     background: var(--bg);
     color: var(--text);
+    font-size: 1rem;
     font-weight: 600;
     cursor: pointer;
-  }
-  .tabs button.active {
-    background: var(--accent);
-    color: var(--on-accent);
-    border-color: var(--accent);
   }
   .roles {
     display: flex;

@@ -603,6 +603,10 @@
     {/if}
 
     {#if $readerIsFixedLayout}
+      <!-- Неразрывная группа — только зум: «−», «100%» и «+» бессмысленны
+           порознь. Кнопки конвертации ниже переносятся сами по себе, иначе
+           группа целиком не влезала в строку и уезжала вся. -->
+      <div class="pdf-tools">
       <button
         class="text-btn"
         onclick={() => setZoomPct(zoomPct - 25)}
@@ -629,6 +633,7 @@
       >
         +
       </button>
+      </div>
       <button class="text-btn" onclick={() => makeTextual('pdfjs')} disabled={converting} title={$t('Сделать текстовой (перетекаемый шрифт)')}>
         {converting ? $t('Конвертация…') : $t('В текст')}
       </button>
@@ -820,12 +825,29 @@
   }
   .bar {
     display: flex;
+    /* На узком экране (телефон + PDF: счётчик страниц, зум, «В текст», mupdf,
+       закладки, оглавление, настройки) в одну строку всё не влезает. Без
+       переноса элементы наезжали друг на друга — счётчик уходил под кнопки
+       зума. Переносим на вторую строку, а не сжимаем в кашу. */
+    flex-wrap: wrap;
     align-items: center;
     gap: 0.5rem;
+    row-gap: 0.35rem;
     padding: 0.4rem 0.6rem;
     background: var(--surface);
     border-bottom: 1px solid var(--border);
     z-index: 10;
+  }
+  /* Управляющие элементы не ужимаем — иначе подписи режутся и наползают. */
+  .bar > button,
+  .bar > select,
+  .bar > .pdf-tools {
+    flex: 0 0 auto;
+  }
+  .pdf-tools {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
   }
   .title {
     font-weight: 600;
@@ -833,7 +855,24 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    /* Ужимается многоточием (min-width: 0 обязателен для flex-элемента),
+       но не растягивается: место нужнее кнопкам. */
+    flex: 0 1 auto;
+    min-width: 0;
     max-width: 50vw;
+  }
+  /* На телефоне заголовок отдаёт место кнопкам: название книги и так видно
+     в библиотеке, а панель из-за него уезжала на лишнюю строку. */
+  @media (max-width: 700px) {
+    .title {
+      max-width: 26vw;
+    }
+    /* Распорка растягивается на всю свободную ширину и выталкивала кнопки
+       на следующую строку, оставляя первую полупустой. На узком экране
+       кнопки идут подряд — панель занимает меньше места. */
+    .spacer {
+      display: none;
+    }
   }
   .spacer {
     flex: 1;
