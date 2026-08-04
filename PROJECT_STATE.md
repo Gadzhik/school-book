@@ -1194,3 +1194,64 @@
     чужой платформы) → перед JS-работой снести и поставить заново
     (`pnpm install`). В `Cargo.toml` сервера/десктопа/мобилки новые зависимости
     — подтянутся при первом `cargo check`.
+- **2026-08-04 (Omarchy, Arch): тулчейн развёрнут, раскладка второй ОС.**
+  Ставилось без `sudo` там, где возможно (система пакетами не засорена):
+  - **Node — через `mise`** (менеджер версий Omarchy, `~/.local/share/mise`).
+    Глобально в системе 26.5.0; для проекта пин **24.19.0** файлом
+    `mise.local.toml` в корне репо (машинный, добавлен в `.gitignore`).
+    После создания файла обязателен `mise trust`, иначе пин молча не работает.
+  - **pnpm** — `mise use -g pnpm@10` (10.34.5), но в проекте автоматически
+    подхватывается **10.20.0** из поля `packageManager` в `package.json` —
+    ровно как на Windows.
+  - **Rust — rustup в `~/.cargo`** (1.97.1) поверх системного `/usr/bin/cargo`
+    из пакета `rust`. rustup нужен ради `rustup target add`; таргеты
+    aarch64/armv7/i686/x86_64-linux-android поставлены.
+  - **JDK 21** — уже был в системе (`/usr/lib/jvm/java-21-openjdk`).
+  - **Android SDK → `~/Android/Sdk`** (7.7 ГБ): cmdline-tools 19.0,
+    platform-tools 37.0.1 (adb 1.0.41), platforms;android-36,
+    build-tools;36.0.0, **ndk;28.2.13676358** (`NDK_HOME`), emulator 37.1.11,
+    system-image android-36 google_apis x86_64.
+  - **AVD `gg1`** создан (pixel_6, x86_64, 1080x2340, RAM 4 ГБ, data 6 ГБ).
+    ⚠️ Грабля: новые cmdline-tools кладут AVD/keystore не в `~/.android`, а в
+    **`$XDG_CONFIG_HOME/.android`** — а Gradle ищет `debug.keystore` в старом
+    `~/.android`. Всё сведено обратно в **`~/.android`** (avd, cache,
+    debug.keystore перенесены, пути в `gg1.ini` поправлены), и выставлен
+    **`ANDROID_USER_HOME=$HOME/.android`**, чтобы инструменты не разъезжались.
+    `debug.keystore` сгенерирован вручную (`androiddebugkey`, пароли `android`)
+    — для подписи release-APK.
+  - **env — в `~/.config/devtools.env.sh`**, подключается из `~/.zshrc` и
+    `~/.bashrc`: `. ~/.cargo/env`, `JAVA_HOME`, `ANDROID_HOME`/`ANDROID_SDK_ROOT`,
+    `NDK_HOME`, PATH(cmdline-tools, platform-tools, emulator).
+  - `gen/android` сгенерирован заново (`tauri android init`) — на новой ОС его
+    нет, он gitignored. Три правки скилла `build-android` наложены сразу:
+    MainActivity без `enableEdgeToEdge`, `allowBackup="false"`, `values-en`.
+  - `node_modules` с Windows снесены, `pnpm install` **прошёл за 16 с** (ext4,
+    без граблей ntfs3). Предупреждение про ignored build scripts
+    (canvas, tesseract.js) — такое же, как на Windows, не чинилось.
+  - **Проверки:** svelte-check 580 файлов 0/0, network `tsc --noEmit` чисто,
+    vitest 21/21, `cargo check` сервера — зелёный, `cargo check --target
+    aarch64-linux-android` мобилки — зелёный.
+  - ⚠️ **Десктоп на Linux требует системный пакет `speech-dispatcher`** —
+    крейт `tts` → `speech-dispatcher-sys` ищет `speech-dispatcher/libspeechd.h`
+    и без него `cargo check` десктопа падает. Ставится только через sudo:
+    `sudo pacman -S --needed speech-dispatcher xdotool`. Остальные зависимости
+    Tauri в Omarchy уже есть (webkit2gtk-4.1, base-devel, librsvg,
+    libayatana-appindicator, openssl, curl/wget/file).
+- **2026-08-04 (Omarchy): дополнительно поставлен Flutter** (просьба владельца;
+  к читалке не относится — она на Tauri, но тулчейн на машине нужен).
+  - **Flutter 3.44.8 stable + Dart 3.12.2** → `~/development/flutter` (официальный
+    tar.xz, обновляется `flutter upgrade`). PATH и `FLUTTER_ROOT` — в том же
+    `~/.config/devtools.env.sh`.
+  - `flutter config --android-sdk ~/Android/Sdk`; лицензии Android уже приняты
+    (через `sdkmanager --licenses`), `flutter doctor` это подтверждает.
+  - Веб-цель: в системе **chromium**, не chrome → выставлен
+    `CHROME_EXECUTABLE=/usr/bin/chromium`, иначе `flutter run -d chrome` не видит
+    браузер.
+  - На машине обнаружился **Android Studio в `/opt/android-studio`** — Flutter по
+    умолчанию берёт его JBR-21 как java для Gradle. Если понадобится системный
+    JDK: `flutter config --jdk-dir=/usr/lib/jvm/java-21-openjdk`.
+  - `flutter doctor`: всё зелёное, кроме Linux-desktop — **не хватает `ninja`**
+    (и `mesa-utils` для eglinfo, некритично). Ставится тем же sudo-заходом:
+    `sudo pacman -S --needed speech-dispatcher xdotool ninja mesa-utils`.
+  - Телеметрия Flutter НЕ отключалась (решение владельца) — при желании
+    `flutter --disable-analytics`.

@@ -12,6 +12,9 @@ build/
 Thumbs.db
 *.log
 
+# Локальный пин версий тулчейна (mise) — своя у каждой машины
+mise.local.toml
+
 # Vite / PWA
 apps/**/dev-dist/
 apps/**/public/foliate-js/
