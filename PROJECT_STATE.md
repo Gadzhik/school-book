@@ -1255,3 +1255,11 @@
     `sudo pacman -S --needed speech-dispatcher xdotool ninja mesa-utils`.
   - Телеметрия Flutter НЕ отключалась (решение владельца) — при желании
     `flutter --disable-analytics`.
+- **2026-08-04 (Omarchy): sudo-хвост закрыт — тулчейн полностью зелёный.**
+  Владелец поставил `speech-dispatcher 0.12.1`, `xdotool`, `ninja 1.13.2`,
+  `mesa-utils`. После этого:
+  - `cargo check` **десктопа** проходит (38 с) — `speech-dispatcher-sys` нашёл
+    `libspeechd.h`, webkit2gtk/gtk/tao/muda собираются;
+  - `flutter doctor` — **No issues found** (Linux desktop toolchain зелёный).
+  Итог по машине: JS (svelte-check/tsc/vitest), Rust (сервер, десктоп,
+  aarch64-linux-android) и Flutter проверены — можно работать и собирать.
