@@ -588,6 +588,15 @@ export const en: Record<string, string> = {
   'Сервер сейчас недоступен. Подключитесь снова.': 'The server is unavailable right now. Connect again.',
   'Не удалось скачать: {0}': 'Failed to download: {0}',
   'Не удалось скачать книгу': 'Failed to download the book',
+  // — Управление школой (вход в админку) —
+  'Управление': 'Manage',
+  'Управление школой': 'School management',
+  'Доступно вашей роли: {0}': 'Available to your role: {0}',
+  'Заявки на регистрацию': 'Registration requests',
+  'Администрирование': 'Administration',
+  'Скрыть администрирование': 'Hide administration',
+  'Пользователи, словари, сводка по школе, настройки сервера, бэкап, журнал':
+    'Users, dictionaries, school overview, server settings, backup, audit log',
   // — Настройки сервера —
   'Настройки сервера': 'Server settings',
   'Порт': 'Port',

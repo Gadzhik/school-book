@@ -4,6 +4,7 @@
    * QR, просмотр OPDS-каталога, скачивание книг в локальную библиотеку.
    */
   import { onMount, onDestroy } from 'svelte';
+  import { get } from 'svelte/store';
   import type { OpdsEntry } from '@reader/network';
   import { view, books } from '../stores';
   import {
@@ -27,6 +28,7 @@
     deletingServer,
     catalogStack,
     coverUrl,
+    openAdminSection,
   } from './store';
   import { syncWords } from './words-sync';
   import { syncMarks } from './marks-sync';
@@ -119,6 +121,12 @@
   let showClassProgress = $state(false);
   let showQuizzes = $state(false);
   let showAdmin = $state(false);
+
+  /** Есть ли у роли хоть один инструмент управления (иначе блок не показываем). */
+  const canManageAnything = $derived.by(() => {
+    const role = $session?.user.role;
+    return role === 'admin' || role === 'power' || role === 'teacher';
+  });
 
   const ROLE_LABEL: Record<string, string> = {
     admin: 'Администратор',
@@ -223,6 +231,13 @@
     // Словари школы (предметы/категории) — с сервера, чтобы у всех был один
     // список. Молча: нет сервера — работаем на локальных.
     if ($connection) void pullTaxonomy(true);
+    // Пришли по кнопке «Управление» с главного экрана — сразу разворачиваем
+    // администрирование, чтобы не искать его среди кнопок.
+    if (get(openAdminSection)) {
+      showAdmin = true;
+      openAdminSection.set(false);
+      setTimeout(() => document.getElementById('manage')?.scrollIntoView({ block: 'start' }), 80);
+    }
     if ($connection) void restoreSession();
     // Освежить профиль (статус «ожидает» мог смениться на «активен»).
     if ($session) void refreshMe();
@@ -434,41 +449,59 @@
             {$t(STATUS_LABEL[$session.user.status] ?? $session.user.status)}
           </span>
           <button class="ghost sm" onclick={refreshMe}>{$t('Обновить статус')}</button>
-          {#if $session.user.status === 'active' && canManage($session.user.role)}
-            <button
-              class="ghost sm approvals-btn"
-              class:has-pending={pendingCount > 0}
-              onclick={() => (showApprovals = !showApprovals)}
-            >
-              {showApprovals ? $t('Скрыть заявки') : $t('Заявки')}
-              {#if pendingCount > 0}<span class="appr-badge">{pendingCount}</span>{/if}
-            </button>
-          {/if}
-          {#if $session.user.status === 'active' && canUpload($session.user.role)}
-            <button class="ghost sm" onclick={() => (showUpload = !showUpload)}>
-              {showUpload ? $t('Скрыть загрузку') : $t('Добавить книгу')}
-            </button>
-          {/if}
-          {#if $session.user.status === 'active'}
+          <button class="ghost sm" onclick={logout}>{$t('Выйти')}</button>
+        </div>
+      {/if}
+
+      <!--
+        Управление школой. Раньше эти кнопки стояли вперемешку с профилем и
+        не читались как админка: главная из них называлась «Журнал», и найти
+        управление ролями/словарями/бэкапом было практически нельзя.
+        Теперь — отдельный блок с заголовком, куда ведёт кнопка «Управление»
+        с главного экрана.
+      -->
+      {#if $session && $session.user.status === 'active' && canManageAnything}
+        <section class="manage" id="manage">
+          <h2>{$t('Управление школой')}</h2>
+          <p class="muted small">{$t('Доступно вашей роли: {0}', userRoleLabel)}</p>
+          <div class="manage-actions">
+            {#if canManage($session.user.role)}
+              <button
+                class="ghost sm approvals-btn"
+                class:has-pending={pendingCount > 0}
+                onclick={() => (showApprovals = !showApprovals)}
+              >
+                {showApprovals ? $t('Скрыть заявки') : $t('Заявки на регистрацию')}
+                {#if pendingCount > 0}<span class="appr-badge">{pendingCount}</span>{/if}
+              </button>
+            {/if}
+            {#if canUpload($session.user.role)}
+              <button class="ghost sm" onclick={() => (showUpload = !showUpload)}>
+                {showUpload ? $t('Скрыть загрузку') : $t('Добавить книгу')}
+              </button>
+            {/if}
             <button class="ghost sm" onclick={() => (showAssignments = !showAssignments)}>
               {showAssignments ? $t('Скрыть задания') : $t('Задания')}
             </button>
             <button class="ghost sm" onclick={() => (showQuizzes = !showQuizzes)}>
               {showQuizzes ? $t('Скрыть квизы') : $t('Квизы')}
             </button>
-          {/if}
-          {#if $session.user.status === 'active' && canManage($session.user.role)}
-            <button class="ghost sm" onclick={() => (showClassProgress = !showClassProgress)}>
-              {showClassProgress ? $t('Скрыть класс') : $t('Мой класс')}
-            </button>
-          {/if}
-          {#if $session.user.status === 'active' && canAudit($session.user.role)}
-            <button class="ghost sm" onclick={() => (showAdmin = !showAdmin)}>
-              {showAdmin ? $t('Скрыть журнал') : $t('Журнал')}
-            </button>
-          {/if}
-          <button class="ghost sm" onclick={logout}>{$t('Выйти')}</button>
-        </div>
+            {#if canManage($session.user.role)}
+              <button class="ghost sm" onclick={() => (showClassProgress = !showClassProgress)}>
+                {showClassProgress ? $t('Скрыть класс') : $t('Прогресс класса')}
+              </button>
+            {/if}
+            {#if canAudit($session.user.role)}
+              <button
+                class="primary sm"
+                onclick={() => (showAdmin = !showAdmin)}
+                title={$t('Пользователи, словари, сводка по школе, настройки сервера, бэкап, журнал')}
+              >
+                {showAdmin ? $t('Скрыть администрирование') : $t('Администрирование')}
+              </button>
+            {/if}
+          </div>
+        </section>
       {/if}
 
       {#if $session && $session.user.status === 'active'}
@@ -685,6 +718,29 @@
     cursor: default;
   }
   .primary.sm,
+  .manage {
+    margin: 1rem 0;
+    padding: 0.8rem 0.9rem 0.9rem;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface);
+  }
+  .manage h2 {
+    margin: 0;
+    font-size: 1.1rem;
+    color: var(--text);
+  }
+  .manage .muted {
+    margin: 0.15rem 0 0.6rem;
+  }
+  .manage-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+  }
+  .small {
+    font-size: 0.8rem;
+  }
   .ghost.sm {
     padding: 0.3rem 0.7rem;
     font-size: 0.85rem;

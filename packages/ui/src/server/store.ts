@@ -420,6 +420,14 @@ export async function downloadEntry(entry: OpdsEntry): Promise<boolean> {
   }
 }
 
+/**
+ * Признак «войти на экран сервера сразу в разделе администрирования».
+ * Ставится кнопкой «Управление» на главном экране: раньше управление ролями,
+ * словарями и бэкапом было спрятано внутри «Сетевой библиотеки» за кнопкой
+ * «Журнал», и найти его было практически нельзя.
+ */
+export const openAdminSection = writable(false);
+
 /** Книги каталога, удаляемые прямо сейчас (по serverId) — для блокировки кнопки. */
 export const deletingServer = writable<Set<string>>(new Set());
 
