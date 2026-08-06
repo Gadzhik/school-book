@@ -15,8 +15,8 @@ import {
   type OpdsEntry,
   type UpdateInfo,
 } from '@reader/network';
-import { updateBook } from '@reader/core';
-import { importServerBook, books, refreshLibrary } from '../stores';
+import { log, updateBook } from '@reader/core';
+import { importServerBook, syncServerTags, books, refreshLibrary } from '../stores';
 import { tr } from '../i18n';
 
 /** Сохранённое подключение (адрес + токен пэйринга). */
@@ -169,6 +169,27 @@ export function serverIdOf(entry: OpdsEntry): string {
 }
 
 /**
+ * Перенести теги из открытого фида на уже скачанные книги. Так класс/предмет
+ * доезжают до копий, скачанных до появления тегов в каталоге, и после
+ * перетегирования книги на сервере.
+ */
+async function applyCatalogTags(feed: { feed: { entries: OpdsEntry[] } }): Promise<void> {
+  const items = feed.feed.entries
+    .filter((e) => e.acquisitionHref)
+    .map((e) => ({
+      serverId: serverIdOf(e),
+      classes: e.classes,
+      subjects: e.subjects,
+      categories: e.categories,
+    }));
+  try {
+    await syncServerTags(items);
+  } catch (e) {
+    log.warn('server', 'не удалось перенести теги каталога на скачанные книги', { e });
+  }
+}
+
+/**
  * Загрузить OPDS-каталог. По умолчанию — «Все книги» (сразу видны книги с
  * кнопкой скачивания), чтобы не путать навигацией. Навигация по классам/
  * предметам доступна по ссылкам (openCatalog(href)) и кнопке «По разделам».
@@ -178,7 +199,9 @@ export async function openCatalog(path = '/opds/all', push = false): Promise<voi
   if (!c) return;
   connectError.set('');
   try {
-    catalog.set(await c.catalog(path));
+    const feed = await c.catalog(path);
+    catalog.set(feed);
+    void applyCatalogTags(feed);
     // push=true — заход в подраздел (кладём в стек); иначе — сброс на корень
     // просмотра (обновление/поиск/«Все книги»/«По разделам»).
     catalogStack.update((s) => (push ? [...s, path] : [path]));
@@ -197,7 +220,9 @@ export async function catalogBack(): Promise<void> {
   const c = client();
   if (!c) return;
   try {
-    catalog.set(await c.catalog(prev));
+    const feed = await c.catalog(prev);
+    catalog.set(feed);
+    void applyCatalogTags(feed);
     catalogStack.set(stack.slice(0, -1));
   } catch (e) {
     connectError.set(
@@ -368,7 +393,13 @@ export async function downloadEntry(entry: OpdsEntry): Promise<boolean> {
     });
     // serverId книги — из ссылки скачивания `/books/<id>/file` (для синка прогресса).
     const serverId = /\/books\/([^/]+)\/file/.exec(entry.acquisitionHref)?.[1] ?? entry.id;
-    await importServerBook(file, serverId);
+    // Теги из каталога переносим на локальную копию — иначе фильтр библиотеки
+    // (класс/предмет/категория) скачанную книгу не увидит.
+    await importServerBook(file, serverId, {
+      classes: entry.classes,
+      subjects: entry.subjects,
+      categories: entry.categories,
+    });
     void refreshAvailable(); // одной доступной книгой меньше — обновить бейдж
     return true;
   } catch (e) {

@@ -29,6 +29,33 @@ fn esc(s: &str) -> String {
 const NAV_TYPE: &str = "application/atom+xml;profile=opds-catalog;kind=navigation";
 const ACQ_TYPE: &str = "application/atom+xml;profile=opds-catalog;kind=acquisition";
 
+/// Книга каталога вместе с тегами — для выдачи `<category>` в acquisition-фиде.
+/// Без тегов в фиде скачанная книга приходит на устройство «голой», и фасетный
+/// фильтр библиотеки (класс/предмет/категория) её не находит.
+pub struct FeedBook<'a> {
+    pub book: &'a Book,
+    pub classes: &'a [String],
+    pub subjects: &'a [String],
+    pub categories: &'a [String],
+}
+
+/// Схема Atom-категории по измерению (по ней клиент раскладывает теги).
+fn scheme_for(dim: &str) -> String {
+    format!("urn:chitalka:{dim}")
+}
+
+/// Вывести `<category>` для одного измерения книги.
+fn categories_of(s: &mut String, dim: &str, values: &[String]) {
+    for v in values {
+        s.push_str(&format!(
+            r#"<category scheme="{}" term="{}" label="{}"/>"#,
+            esc(&scheme_for(dim)),
+            esc(v),
+            esc(&crate::autotag::label(dim, v))
+        ));
+    }
+}
+
 fn feed_head(s: &mut String, title: &str, self_href: &str) {
     s.push_str(r#"<?xml version="1.0" encoding="UTF-8"?>"#);
     s.push_str(
@@ -83,7 +110,7 @@ pub fn dimension_list(title: &str, dim: &str, values: &[(String, i64)]) -> Strin
 }
 
 /// Корневой acquisition-фид: все книги каталога со ссылками на скачивание.
-pub fn acquisition_feed(server_name: &str, books: &[Book]) -> String {
+pub fn acquisition_feed(server_name: &str, books: &[FeedBook<'_>]) -> String {
     let mut s = String::new();
     s.push_str(r#"<?xml version="1.0" encoding="UTF-8"?>"#);
     s.push_str(
@@ -94,7 +121,8 @@ pub fn acquisition_feed(server_name: &str, books: &[Book]) -> String {
     s.push_str(r#"<link rel="self" href="/opds" type="application/atom+xml;profile=opds-catalog"/>"#);
     s.push_str(r#"<link rel="start" href="/opds" type="application/atom+xml;profile=opds-catalog"/>"#);
 
-    for b in books {
+    for fb in books {
+        let b = fb.book;
         let author = b.author.as_deref().unwrap_or("");
         s.push_str("<entry>");
         s.push_str(&format!("<title>{}</title>", esc(&b.title)));
@@ -102,6 +130,10 @@ pub fn acquisition_feed(server_name: &str, books: &[Book]) -> String {
         if !author.is_empty() {
             s.push_str(&format!("<author><name>{}</name></author>", esc(author)));
         }
+        // Теги книги — чтобы скачавшее устройство сохранило класс/предмет.
+        categories_of(&mut s, "class", fb.classes);
+        categories_of(&mut s, "subject", fb.subjects);
+        categories_of(&mut s, "category", fb.categories);
         s.push_str(&format!(
             r#"<link rel="http://opds-spec.org/acquisition" href="/books/{}/file" type="{}"/>"#,
             esc(&b.id),
@@ -123,4 +155,52 @@ pub fn acquisition_feed(server_name: &str, books: &[Book]) -> String {
 
     s.push_str("</feed>");
     s
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn book() -> Book {
+        Book {
+            id: "b1".into(),
+            title: "Информатика 9".into(),
+            author: Some("Автор".into()),
+            format: "epub".into(),
+            size: 10,
+            added_at: 0,
+        }
+    }
+
+    /// Теги книги обязаны попадать в фид: по ним клиент проставляет класс/
+    /// предмет скачанной книге, иначе фасетный фильтр её не находит.
+    #[test]
+    fn acquisition_feed_emits_tags() {
+        let b = book();
+        let classes = vec!["9".to_string()];
+        let subjects = vec!["informatics".to_string()];
+        let none: Vec<String> = vec![];
+        let xml = acquisition_feed(
+            "Сервер",
+            &[FeedBook { book: &b, classes: &classes, subjects: &subjects, categories: &none }],
+        );
+        assert!(xml.contains(r#"<category scheme="urn:chitalka:class" term="9""#), "{xml}");
+        assert!(
+            xml.contains(r#"<category scheme="urn:chitalka:subject" term="informatics""#),
+            "{xml}"
+        );
+        assert!(!xml.contains("urn:chitalka:category"), "пустое измерение не выводим: {xml}");
+    }
+
+    /// Книга без тегов — фид как раньше, без <category>.
+    #[test]
+    fn acquisition_feed_without_tags() {
+        let b = book();
+        let none: Vec<String> = vec![];
+        let xml = acquisition_feed(
+            "Сервер",
+            &[FeedBook { book: &b, classes: &none, subjects: &none, categories: &none }],
+        );
+        assert!(!xml.contains("<category"), "{xml}");
+    }
 }

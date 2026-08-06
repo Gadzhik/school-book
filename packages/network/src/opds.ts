@@ -29,6 +29,12 @@ export interface OpdsEntry {
   acquisitionHref?: string;
   /** MIME скачиваемого файла (напр. application/epub+zip). */
   acquisitionType?: string;
+  /** Классы книги из `<category scheme="urn:chitalka:class">` (ТЗ 5.6). */
+  classes: string[];
+  /** Предметы книги из `<category scheme="urn:chitalka:subject">`. */
+  subjects: string[];
+  /** Категории книги из `<category scheme="urn:chitalka:category">`. */
+  categories: string[];
 }
 
 /** Разобранный фид OPDS. */
@@ -59,6 +65,28 @@ function parseLinks(parent: Element): OpdsLink[] {
     .filter((l) => l.href);
 }
 
+/** Схемы Atom-категорий нашего сервера → измерение классификации. */
+const TAG_SCHEMES: Record<string, 'classes' | 'subjects' | 'categories'> = {
+  'urn:chitalka:class': 'classes',
+  'urn:chitalka:subject': 'subjects',
+  'urn:chitalka:category': 'categories',
+};
+
+/**
+ * Разобрать `<category>` записи по схемам сервера. Чужие схемы (сторонние
+ * OPDS-каталоги) игнорируем — теги там свои и в нашу таксономию не ложатся.
+ */
+function parseTags(el: Element): Pick<OpdsEntry, 'classes' | 'subjects' | 'categories'> {
+  const tags = { classes: [] as string[], subjects: [] as string[], categories: [] as string[] };
+  for (const c of [...el.children]) {
+    if (c.localName !== 'category') continue;
+    const dim = TAG_SCHEMES[c.getAttribute('scheme') ?? ''];
+    const term = c.getAttribute('term')?.trim();
+    if (dim && term && !tags[dim].includes(term)) tags[dim].push(term);
+  }
+  return tags;
+}
+
 function parseEntry(el: Element): OpdsEntry {
   const links = parseLinks(el);
   const authors = [...el.children]
@@ -81,6 +109,7 @@ function parseEntry(el: Element): OpdsEntry {
     coverHref: cover?.href,
     acquisitionHref: acq?.href,
     acquisitionType: acq?.type,
+    ...parseTags(el),
   };
 }
 

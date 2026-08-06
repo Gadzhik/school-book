@@ -48,7 +48,7 @@ use tower_http::trace::TraceLayer;
 
 use db::Db;
 use models::{
-    Assignment, AssignmentForStudent, AssignmentProgressReq, AssignmentReq, AuthResponse, Book,
+    Assignment, AssignmentForStudent, AssignmentProgressReq, AssignmentReq, AuthResponse,
     BookmarkSyncItem, ClassNote, ClassNoteReq, ClassProgressRow, DeviceProgress,
     HighlightSyncItem, LoginReq, Quiz, QuizAnswersReq, QuizForStudent, QuizQuestionPublic,
     QuizReq, QuizScore, RegisterReq, Role, ServerStatus, User, UserStatus, WordSyncItem,
@@ -1972,9 +1972,19 @@ fn visible_books(st: &AppState, headers: &HeaderMap) -> Vec<db::BookAccess> {
         .collect()
 }
 
-/// Извлечь сами книги (Book) из набора доступа — для acquisition-фида.
-fn books_of(access: &[db::BookAccess]) -> Vec<Book> {
-    access.iter().map(|a| a.book.clone()).collect()
+/// Записи acquisition-фида из набора доступа: книга + её теги (класс/предмет/
+/// категория), чтобы фид отдавал `<category>` и клиент сохранил теги скачанной
+/// книги.
+fn feed_books(access: &[db::BookAccess]) -> Vec<opds::FeedBook<'_>> {
+    access
+        .iter()
+        .map(|a| opds::FeedBook {
+            book: &a.book,
+            classes: &a.classes,
+            subjects: &a.subjects,
+            categories: &a.categories,
+        })
+        .collect()
 }
 
 /// Корневой навигационный фид (по измерениям + все книги). Пункт «Мои книги»
@@ -1988,8 +1998,8 @@ async fn opds_root(State(st): State<Arc<AppState>>, headers: HeaderMap) -> Respo
 
 /// Acquisition-фид всех видимых пользователю книг.
 async fn opds_all(State(st): State<Arc<AppState>>, headers: HeaderMap) -> Response {
-    let books = books_of(&visible_books(&st, &headers));
-    opds_response(opds::acquisition_feed(&st.name, &books))
+    let access = visible_books(&st, &headers);
+    opds_response(opds::acquisition_feed(&st.name, &feed_books(&access)))
 }
 
 /// Acquisition-фид «Мои книги» — то, что текущий пользователь загрузил сам.
@@ -1997,15 +2007,17 @@ async fn opds_mine(State(st): State<Arc<AppState>>, headers: HeaderMap) -> Respo
     let Some(me) = current_user(&st, &headers) else {
         return StatusCode::UNAUTHORIZED.into_response();
     };
-    let books: Vec<Book> = st
+    let access: Vec<db::BookAccess> = st
         .db
         .all_books_access()
         .unwrap_or_default()
         .into_iter()
         .filter(|b| b.owner_id.as_deref() == Some(me.id.as_str()))
-        .map(|a| a.book)
         .collect();
-    opds_response(opds::acquisition_feed(&format!("{} — Мои книги", st.name), &books))
+    opds_response(opds::acquisition_feed(
+        &format!("{} — Мои книги", st.name),
+        &feed_books(&access),
+    ))
 }
 
 /// Параметры поиска книг.
@@ -2025,15 +2037,15 @@ async fn opds_search(
     if needle.is_empty() {
         return opds_response(opds::acquisition_feed(&st.name, &[]));
     }
-    let books: Vec<Book> = visible_books(&st, &headers)
+    let access: Vec<db::BookAccess> = visible_books(&st, &headers)
         .into_iter()
-        .map(|a| a.book)
-        .filter(|b| {
+        .filter(|a| {
+            let b = &a.book;
             b.title.to_lowercase().contains(&needle)
                 || b.author.as_deref().map(|a| a.to_lowercase().contains(&needle)).unwrap_or(false)
         })
         .collect();
-    opds_response(opds::acquisition_feed(&st.name, &books))
+    opds_response(opds::acquisition_feed(&st.name, &feed_books(&access)))
 }
 
 /// Имя колонки тегов BookAccess по имени измерения OPDS.
@@ -2076,13 +2088,12 @@ async fn opds_categories(State(st): State<Arc<AppState>>, headers: HeaderMap) ->
 
 /// Acquisition-фид видимых книг с данным значением измерения.
 fn tag_feed(st: &AppState, headers: &HeaderMap, dim: &str, id: &str) -> Response {
-    let books: Vec<Book> = visible_books(st, headers)
+    let access: Vec<db::BookAccess> = visible_books(st, headers)
         .into_iter()
         .filter(|b| dim_tags(b, dim).iter().any(|v| v == id))
-        .map(|a| a.book)
         .collect();
     let title = format!("{} — {}", st.name, autotag::label(dim, id));
-    opds_response(opds::acquisition_feed(&title, &books))
+    opds_response(opds::acquisition_feed(&title, &feed_books(&access)))
 }
 
 async fn opds_by_class(State(st): State<Arc<AppState>>, headers: HeaderMap, Path(id): Path<String>) -> Response {
@@ -2977,6 +2988,7 @@ async fn post_words(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use models::Book;
 
     fn book(public: bool, owner: Option<&str>, classes: &[&str], subjects: &[&str]) -> db::BookAccess {
         db::BookAccess {
