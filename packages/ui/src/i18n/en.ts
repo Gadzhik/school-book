@@ -588,6 +588,13 @@ export const en: Record<string, string> = {
   'Сервер сейчас недоступен. Подключитесь снова.': 'The server is unavailable right now. Connect again.',
   'Не удалось скачать: {0}': 'Failed to download: {0}',
   'Не удалось скачать книгу': 'Failed to download the book',
+  'Не удалось удалить: {0}': 'Failed to delete: {0}',
+  'Не удалось удалить книгу': 'Failed to delete the book',
+  'Удалить с сервера': 'Delete from server',
+  'Удалить книгу с сервера': 'Delete the book from the server',
+  'Удаление…': 'Deleting…',
+  'Удалить «{0}» с сервера? Файл и запись каталога будут удалены, скачанные копии на устройствах останутся.':
+    'Delete "{0}" from the server? The file and the catalog entry will be removed; copies already downloaded to devices will stay.',
   'Не удалось загрузить журнал': 'Failed to load the log',
   'Не удалось скачать копию': 'Failed to download the backup',
 

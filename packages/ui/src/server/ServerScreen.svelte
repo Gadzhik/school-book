@@ -23,6 +23,9 @@
     restoreSession,
     refreshStatus,
     downloadEntry,
+    deleteServerBook,
+    deletingServer,
+    catalogStack,
     coverUrl,
   } from './store';
   import { syncWords } from './words-sync';
@@ -64,6 +67,28 @@
   );
   function openLocal(bookId: string) {
     view.set({ name: 'reader', bookId });
+  }
+
+  /**
+   * Можно ли удалять книги из ОТКРЫТОГО сейчас раздела каталога (ТЗ 6.1).
+   * Админ и power — по всей школе. Учитель — только свои книги, а гарантированно
+   * свои они только в разделе «Мои книги»: в общем фиде владелец не виден, и
+   * кнопка на чужой книге всё равно упёрлась бы в отказ сервера.
+   */
+  const canDeleteHere = $derived.by(() => {
+    const role = $session?.user.role;
+    if (role === 'admin' || role === 'power') return true;
+    return role === 'teacher' && $catalogStack.at(-1) === '/opds/mine';
+  });
+
+  async function removeFromServer(entry: OpdsEntry) {
+    const ok = confirm(
+      tr(
+        'Удалить «{0}» с сервера? Файл и запись каталога будут удалены, скачанные копии на устройствах останутся.',
+        entry.title,
+      ),
+    );
+    if (ok) await deleteServerBook(entry);
   }
 
   // Адрес для подключения других устройств (из /status сервера).
@@ -561,6 +586,18 @@
                       : $t('Скачать')}
                   </button>
                 {/if}
+                {#if canDeleteHere}
+                  <button
+                    class="danger sm"
+                    disabled={$deletingServer.has(serverIdOf(entry))}
+                    title={$t('Удалить книгу с сервера')}
+                    onclick={() => removeFromServer(entry)}
+                  >
+                    {$deletingServer.has(serverIdOf(entry))
+                      ? $t('Удаление…')
+                      : $t('Удалить с сервера')}
+                  </button>
+                {/if}
               {:else}
                 {@const href = navHref(entry)}
                 {#if href}
@@ -655,6 +692,23 @@
     color: var(--text);
     padding: 0.55rem 0.9rem;
     cursor: pointer;
+  }
+  /* Удаление книги с сервера — необратимое действие, поэтому отдельный вид. */
+  .danger {
+    border: 1px solid #c0392b;
+    border-radius: 8px;
+    background: transparent;
+    color: #c0392b;
+    padding: 0.55rem 0.9rem;
+    cursor: pointer;
+  }
+  .danger.sm {
+    padding: 0.3rem 0.7rem;
+    font-size: 0.85rem;
+  }
+  .danger:disabled {
+    opacity: 0.6;
+    cursor: default;
   }
   .discovered {
     list-style: none;
