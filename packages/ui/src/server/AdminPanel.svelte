@@ -18,6 +18,8 @@
   import UsersPanel from './UsersPanel.svelte';
   import BackupPanel from './BackupPanel.svelte';
   import TaxonomyPanel from './TaxonomyPanel.svelte';
+  import SchoolReportPanel from './SchoolReportPanel.svelte';
+  import ServerSettingsPanel from './ServerSettingsPanel.svelte';
   import { canEditTaxonomy } from './taxonomy';
   import { t, locale } from '../i18n';
 
@@ -33,6 +35,11 @@
     restore: 'восстановление БД',
     log_level: 'уровень логов',
     create_user: 'создан пользователь',
+    server_settings: 'настройки сервера',
+    taxonomy: 'правка словаря',
+    taxonomy_delete: 'удаление из словаря',
+    retag: 'изменены теги книги',
+    unpublish: 'книга снята с сервера',
     set_role: 'смена роли',
     delete_user: 'удалён пользователь',
   };
@@ -61,11 +68,13 @@
 
 <!-- Словари школы: предметы и категории (ТЗ 5.3) — admin/power. -->
 {#if canEditTaxonomy($session?.user.role)}
+  <SchoolReportPanel />
   <TaxonomyPanel />
 {/if}
 
-<!-- Резервные копии: автобэкап, скачивание, восстановление — только админ. -->
+<!-- Настройки сервера и резервные копии — только админ (ТЗ 6.1). -->
 {#if canBackup($session?.user.role)}
+  <ServerSettingsPanel />
   <BackupPanel />
 
   <!-- Уровень логирования сервера: применяется сразу, хранится в БД. -->

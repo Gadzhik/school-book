@@ -38,6 +38,8 @@ import type {
   QuizResultRow,
   ServerTaxonomy,
   TaxonomyKind,
+  SchoolProgressRow,
+  ServerSettings,
 } from './types';
 
 export interface ClientOptions {
@@ -325,6 +327,29 @@ export class LibraryServerClient {
     // дольше обычного запроса — иначе AbortController рвёт аплоад (NetworkError).
     const res = await this.#fetch('/books', { method: 'POST', body: fd }, 10 * 60_000);
     return (await res.json()) as { id: string };
+  }
+
+  /** Настройки сервера (порт, код доступа). Только администратор. */
+  async serverSettings(): Promise<ServerSettings> {
+    const res = await this.#fetch('/api/server-settings', { method: 'GET' });
+    return (await res.json()) as ServerSettings;
+  }
+
+  /**
+   * Сохранить настройки сервера. Код доступа применяется сразу, порт — со
+   * следующего запуска (сменить порт «на лету» значило бы оборвать соединения).
+   */
+  async saveServerSettings(patch: { port?: number; token?: string }): Promise<void> {
+    await this.#postJson<void>('/api/server-settings', patch, 'PUT');
+  }
+
+  /**
+   * Сводка прогресса по всем классам школы (admin/power). Для поклассного
+   * разреза есть `classProgress` — здесь только агрегат по каждому классу.
+   */
+  async schoolProgress(): Promise<SchoolProgressRow[]> {
+    const res = await this.#fetch('/api/school/progress', { method: 'GET' });
+    return (await res.json()) as SchoolProgressRow[];
   }
 
   /**
