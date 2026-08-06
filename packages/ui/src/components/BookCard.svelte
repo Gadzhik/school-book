@@ -284,7 +284,10 @@
     .act {
       padding: 9px;
     }
-    .card:hover .tags {
+    /* Метка класса нужна всегда: прятать её под кнопки больше не надо —
+       кнопки внизу. На таче :hover/:focus залипают после тапа. */
+    .card:hover .tags,
+    .card:focus-within .tags {
       opacity: 1;
     }
   }

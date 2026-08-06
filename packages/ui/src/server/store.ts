@@ -273,7 +273,11 @@ async function reconcilePublished(feed: OpdsFeed): Promise<void> {
   );
   if (!stale.length) return;
   for (const b of stale) {
-    await updateBook(b.id, { serverId: undefined, serverSynced: undefined });
+    await updateBook(b.id, {
+      serverId: undefined,
+      serverSynced: undefined,
+      serverTags: undefined,
+    });
   }
   await refreshLibrary();
 }

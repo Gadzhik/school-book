@@ -52,11 +52,15 @@ export async function publishToServer(book: BookMeta): Promise<boolean> {
       categories: book.categories ?? [],
     };
     const sig = tagsSignature(book);
+    // Запоминаем и сам набор: после публикации на сервере лежит именно он.
+    // Иначе «последний известный набор сервера» останется прежним, и обратное
+    // изменение тегов на сервере не доедет до этой копии (сверка сочтёт, что
+    // ничего не менялось).
     let serverId = book.serverId;
     if (serverId) {
       try {
         await c.updateBookTags(serverId, tags);
-        await updateBook(book.id, { serverSynced: sig });
+        await updateBook(book.id, { serverSynced: sig, serverTags: tags });
       } catch (e) {
         // 404 — метка устарела (книгу удалили с сервера): публикуем заново.
         if (!(e instanceof HttpError && e.status === 404)) throw e;
@@ -66,7 +70,7 @@ export async function publishToServer(book: BookMeta): Promise<boolean> {
     if (!serverId) {
       const file = await getBookFile(book.id);
       const res = await c.uploadBook(file, { fileName: file.name, title: book.title, ...tags });
-      await updateBook(book.id, { serverId: res.id, serverSynced: sig });
+      await updateBook(book.id, { serverId: res.id, serverSynced: sig, serverTags: tags });
     }
     await refreshLibrary();
     uploadMsg.set(tr('«{0}» опубликована на сервере.', book.title));
@@ -100,7 +104,11 @@ export async function unpublishFromServer(book: BookMeta): Promise<boolean> {
       // Локальную метку всё равно снимаем, иначе она зависает навсегда.
       if (!(e instanceof HttpError && e.status === 404)) throw e;
     }
-    await updateBook(book.id, { serverId: undefined, serverSynced: undefined });
+    await updateBook(book.id, {
+      serverId: undefined,
+      serverSynced: undefined,
+      serverTags: undefined,
+    });
     await refreshLibrary();
     uploadMsg.set(tr('«{0}» снята с публикации.', book.title));
     void refreshAvailable();
