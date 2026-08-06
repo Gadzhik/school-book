@@ -22,7 +22,7 @@
     searchCatalog,
     serverIdOf,
     restoreSession,
-    refreshStatus,
+    refreshServerState,
     downloadEntry,
     deleteServerBook,
     deletingServer,
@@ -410,10 +410,7 @@
         <span class="muted">{$t('книг: {0}', $serverStatus.books ?? '—')}</span>
         <button
           class="ghost"
-          onclick={() => {
-            void refreshStatus(); // счётчик «книг: N» тоже освежаем
-            void openCatalog();
-          }}>{$t('Обновить')}</button
+          onclick={() => void refreshServerState()}>{$t('Обновить')}</button
         >
         {#if shareUrl}
           <button class="ghost" onclick={() => (showShare = !showShare)}>
@@ -448,7 +445,15 @@
           >
             {$t(STATUS_LABEL[$session.user.status] ?? $session.user.status)}
           </span>
-          <button class="ghost sm" onclick={refreshMe}>{$t('Обновить статус')}</button>
+          <!-- Обновляем и профиль, и состояние сервера: книги могли удалить с
+               другого устройства, и без сверки каталог/карточки врали. -->
+          <button
+            class="ghost sm"
+            onclick={() => {
+              void refreshMe();
+              void refreshServerState();
+            }}>{$t('Обновить статус')}</button
+          >
           <button class="ghost sm" onclick={logout}>{$t('Выйти')}</button>
         </div>
       {/if}
