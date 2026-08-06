@@ -337,3 +337,18 @@ export interface WordSyncItem {
   /** true — удалено на источнике (тумбстоун для корректного LWW). */
   deleted?: boolean;
 }
+
+/** Измерение управляемого словаря школы (классы 1–11 не редактируются). */
+export type TaxonomyKind = 'subject' | 'category';
+
+/** Запись словаря: устойчивый id + отображаемое название. */
+export interface TaxonomyEntry {
+  id: string;
+  name: string;
+}
+
+/** Словари школы, как их отдаёт сервер (ТЗ 5.3: единые для всех устройств). */
+export interface ServerTaxonomy {
+  subjects: TaxonomyEntry[];
+  categories: TaxonomyEntry[];
+}

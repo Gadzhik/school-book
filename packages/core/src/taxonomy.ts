@@ -180,3 +180,48 @@ export async function removeCategory(id: string): Promise<void> {
   const db = await getDB();
   await db.delete('categories', id);
 }
+
+// --- Синхронизация словарей со школьным сервером (ТЗ 5.3, 6.1) ---
+
+/** Словари, как их отдаёт сервер. */
+export interface ServerDictionaries {
+  subjects: { id: string; name: string }[];
+  categories: { id: string; name: string }[];
+}
+
+/**
+ * Принять словари сервера как источник истины: добавить/переименовать
+ * пришедшее и убрать местные записи, которых на сервере нет. Классы не
+ * трогаем — они структурны (по ним привязаны пользователи и права).
+ *
+ * Уже проставленные на книгах теги при удалении записи НЕ чистим: книга
+ * сохраняет id, и если запись вернут — тег снова заработает.
+ * Возвращает true, если что-то изменилось (UI перечитает списки).
+ */
+export async function applyServerTaxonomy(dict: ServerDictionaries): Promise<boolean> {
+  const db = await getDB();
+  let changed = false;
+
+  for (const store of ['subjects', 'categories'] as const) {
+    const incoming = store === 'subjects' ? dict.subjects : dict.categories;
+    if (!Array.isArray(incoming) || incoming.length === 0) continue; // пустой ответ игнорируем
+    const local = await db.getAll(store);
+    const byId = new Map(local.map((e) => [e.id, e]));
+
+    for (const entry of incoming) {
+      const cur = byId.get(entry.id);
+      if (!cur || cur.name !== entry.name) {
+        await db.put(store, { ...(cur ?? {}), id: entry.id, name: entry.name });
+        changed = true;
+      }
+    }
+    const serverIds = new Set(incoming.map((e) => e.id));
+    for (const entry of local) {
+      if (!serverIds.has(entry.id)) {
+        await db.delete(store, entry.id);
+        changed = true;
+      }
+    }
+  }
+  return changed;
+}

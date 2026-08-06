@@ -588,6 +588,23 @@ export const en: Record<string, string> = {
   'Сервер сейчас недоступен. Подключитесь снова.': 'The server is unavailable right now. Connect again.',
   'Не удалось скачать: {0}': 'Failed to download: {0}',
   'Не удалось скачать книгу': 'Failed to download the book',
+  // — Словари школы (таксономия) —
+  'Словари школы': 'School dictionaries',
+  'Единые для всех устройств: правка появится у всех учителей и учеников после подключения.':
+    'Shared across devices: your change reaches every teacher and student once they connect.',
+  'Категории': 'Categories',
+  'Переименовать': 'Rename',
+  'Новое название': 'New name',
+  'Не удалось сохранить': 'Failed to save',
+  'Не удалось получить словари: {0}': 'Failed to fetch dictionaries: {0}',
+  'Не удалось получить словари': 'Failed to fetch dictionaries',
+  'Классы 1–11 не редактируются: по ним привязаны учётные записи и права доступа.':
+    'Classes 1–11 are not editable: accounts and access rights are bound to them.',
+  'Удалить «{0}» из словаря? Книги с этим тегом останутся, но тег перестанет показываться в фильтрах и навигации.':
+    'Remove "{0}" from the dictionary? Books keep the tag, but it will no longer appear in filters and navigation.',
+  'Нет прав на изменение словарей': 'No permission to change the dictionaries',
+  'Можно править только предметы и категории': 'Only subjects and categories can be edited',
+  'Пустое название': 'Empty name',
   'Не удалось удалить: {0}': 'Failed to delete: {0}',
   'Не удалось удалить книгу': 'Failed to delete the book',
   'Удалить с сервера': 'Delete from server',

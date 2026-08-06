@@ -34,13 +34,21 @@ export type ViewState =
 
 const VIEW_KEY = 'reader:view';
 
-/** Восстановить последний вид из localStorage (только открытую книгу). */
+/**
+ * Экраны, которые переживают перезагрузку страницы. Сканер — нет: его сессия
+ * (кадры, распознавание) живёт только в памяти, и восстанавливать пустой
+ * сканер бессмысленно. Библиотека — корневой экран, её и так покажем.
+ */
+const PERSISTED_VIEWS = new Set(['reader', 'words', 'server', 'report']);
+
+/** Восстановить последний экран из localStorage (F5 не должен сбрасывать вид). */
 function loadView(): ViewState {
   try {
     const raw = localStorage.getItem(VIEW_KEY);
     if (raw) {
       const v = JSON.parse(raw) as ViewState;
       if (v?.name === 'reader' && v.bookId) return v;
+      if (v?.name && PERSISTED_VIEWS.has(v.name)) return v;
     }
   } catch {
     /* нет доступа к localStorage — ок */
@@ -50,11 +58,11 @@ function loadView(): ViewState {
 
 export const view = writable<ViewState>(loadView());
 
-// Сохраняем активную книгу, чтобы после перезагрузки остаться в ней.
-// Библиотека/сканер не персистятся (сессия сканера живёт только в памяти).
+// Запоминаем текущий экран, чтобы перезагрузка возвращала туда же, а не в
+// библиотеку. Сканер и библиотека метку снимают (см. PERSISTED_VIEWS).
 view.subscribe((v) => {
   try {
-    if (v.name === 'reader') localStorage.setItem(VIEW_KEY, JSON.stringify(v));
+    if (PERSISTED_VIEWS.has(v.name)) localStorage.setItem(VIEW_KEY, JSON.stringify(v));
     else localStorage.removeItem(VIEW_KEY);
   } catch {
     /* ок */

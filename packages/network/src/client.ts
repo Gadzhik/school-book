@@ -36,6 +36,8 @@ import type {
   QuizInput,
   QuizScore,
   QuizResultRow,
+  ServerTaxonomy,
+  TaxonomyKind,
 } from './types';
 
 export interface ClientOptions {
@@ -323,6 +325,37 @@ export class LibraryServerClient {
     // дольше обычного запроса — иначе AbortController рвёт аплоад (NetworkError).
     const res = await this.#fetch('/books', { method: 'POST', body: fd }, 10 * 60_000);
     return (await res.json()) as { id: string };
+  }
+
+  /**
+   * Словари школы (предметы/категории) — единые для всех устройств (ТЗ 5.3).
+   * Открыты на чтение: это только названия, и клиенту они нужны до входа.
+   */
+  async taxonomy(): Promise<ServerTaxonomy> {
+    const res = await this.#fetch('/api/taxonomy', { method: 'GET' });
+    return (await res.json()) as ServerTaxonomy;
+  }
+
+  /**
+   * Добавить (без id) или переименовать (с id) запись словаря.
+   * Права admin/power проверяет сервер. Возвращает id записи.
+   */
+  async saveTaxonomyEntry(entry: {
+    kind: TaxonomyKind;
+    id?: string;
+    name: string;
+  }): Promise<{ id: string }> {
+    const res = await this.#fetch('/api/taxonomy', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(entry),
+    });
+    return (await res.json()) as { id: string };
+  }
+
+  /** Удалить запись словаря (теги на книгах остаются, но перестают быть видны). */
+  async deleteTaxonomyEntry(kind: TaxonomyKind, id: string): Promise<void> {
+    await this.#fetch(`/api/taxonomy/${kind}/${encodeURIComponent(id)}`, { method: 'DELETE' });
   }
 
   /**

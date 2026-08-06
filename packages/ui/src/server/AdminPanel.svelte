@@ -17,6 +17,8 @@
   import type { LogLevel } from '@reader/network';
   import UsersPanel from './UsersPanel.svelte';
   import BackupPanel from './BackupPanel.svelte';
+  import TaxonomyPanel from './TaxonomyPanel.svelte';
+  import { canEditTaxonomy } from './taxonomy';
   import { t, locale } from '../i18n';
 
   const ACTION_LABEL: Record<string, string> = {
@@ -56,6 +58,11 @@
 
 <!-- Управление пользователями (создать/роли/блок/удаление) — admin/power. -->
 <UsersPanel />
+
+<!-- Словари школы: предметы и категории (ТЗ 5.3) — admin/power. -->
+{#if canEditTaxonomy($session?.user.role)}
+  <TaxonomyPanel />
+{/if}
 
 <!-- Резервные копии: автобэкап, скачивание, восстановление — только админ. -->
 {#if canBackup($session?.user.role)}

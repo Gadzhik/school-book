@@ -35,6 +35,7 @@
   import { canManage, loadApprovals, manageableUsers } from './approvals';
   import { canUpload } from './upload';
   import { canAudit } from './admin';
+  import { pullTaxonomy } from './taxonomy';
   import AuthScreen from './AuthScreen.svelte';
   import ApprovalsScreen from './ApprovalsScreen.svelte';
   import BookUpload from './BookUpload.svelte';
@@ -219,6 +220,9 @@
   onMount(() => {
     hasTauri = !!tauriInvoke();
     initAutoSync(); // авто-синк при возврате сети
+    // Словари школы (предметы/категории) — с сервера, чтобы у всех был один
+    // список. Молча: нет сервера — работаем на локальных.
+    if ($connection) void pullTaxonomy(true);
     if ($connection) void restoreSession();
     // Освежить профиль (статус «ожидает» мог смениться на «активен»).
     if ($session) void refreshMe();

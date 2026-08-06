@@ -247,6 +247,10 @@ fn build_router(state: Arc<AppState>, web_dir: Option<PathBuf>) -> Router {
             "/books",
             post(upload_book).layer(DefaultBodyLimit::max(512 * 1024 * 1024)),
         )
+        // Управляемые словари школы (ТЗ 5.3/6.1): читать может любой клиент
+        // (это просто названия), править — admin/power.
+        .route("/api/taxonomy", get(get_taxonomy).post(upsert_taxonomy))
+        .route("/api/taxonomy/{kind}/{id}", delete(delete_taxonomy))
         .route("/books/{id}/tags", post(update_book_tags))
         .route("/books/{id}", delete(delete_book))
         .route("/api/assignments", get(list_assignments).post(create_assignment))
@@ -400,6 +404,12 @@ pub async fn start(cfg: Config) -> std::io::Result<ServerHandle> {
     match db.scan_library(&cfg.library) {
         Ok(n) => tracing::info!("каталог: добавлено {n} книг из {}", cfg.library.display()),
         Err(e) => tracing::warn!("сканирование библиотеки не удалось: {e}"),
+    }
+
+    // Словари предметов/категорий: при первом старте сидируем ФГОС-набором,
+    // дальше их правит админ (ТЗ 5.3) и клиенты тянут с сервера.
+    if let Err(e) = db.seed_taxonomy(&autotag::default_taxonomy()) {
+        tracing::warn!("не удалось заполнить словари таксономии: {e}");
     }
 
     // Встроенный администратор: при пустой БД создаём учётку admin, чтобы было
@@ -997,6 +1007,116 @@ async fn upload_book(
             st.db.log_audit(&me.full_name, "upload", &final_title);
             (StatusCode::CREATED, Json(serde_json::json!({ "id": id }))).into_response()
         }
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
+}
+
+// --- Управляемые словари: предметы и категории (ТЗ 5.3, 6.1) ---
+
+/// Запись словаря в запросе на добавление/переименование.
+#[derive(Deserialize)]
+struct TaxonomyReq {
+    /// «subject» или «category». Классы не редактируются — они структурны.
+    kind: String,
+    /// Пустой/отсутствующий id — добавление новой записи (id сгенерируем).
+    #[serde(default)]
+    id: Option<String>,
+    name: String,
+}
+
+/// Допустимые словари. Классы (1–11) сюда не входят: по ним привязаны
+/// пользователи и права, переименование/удаление ломало бы доступ.
+fn valid_kind(kind: &str) -> bool {
+    matches!(kind, "subject" | "category")
+}
+
+/// id из названия: латиница/цифры сохраняем, остальное — в дефис. Для
+/// кириллицы получится пусто, поэтому фолбэк — метка времени.
+fn slug_for(name: &str) -> String {
+    let s: String = name
+        .trim()
+        .to_lowercase()
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+        .collect();
+    let s = s.trim_matches('-').to_string();
+    if s.is_empty() {
+        format!("id-{}", now_ms())
+    } else {
+        s
+    }
+}
+
+/// Отдать словари школы: `{ subjects: [{id,name}], categories: [...] }`.
+/// Открыт для всех — это просто названия, а клиенту они нужны до входа.
+async fn get_taxonomy(State(st): State<Arc<AppState>>) -> Response {
+    let all = st.db.taxonomy_all().unwrap_or_default();
+    let pick = |want: &str| -> Vec<serde_json::Value> {
+        all.iter()
+            .filter(|(kind, _, _)| kind == want)
+            .map(|(_, id, name)| serde_json::json!({ "id": id, "name": name }))
+            .collect()
+    };
+    Json(serde_json::json!({ "subjects": pick("subject"), "categories": pick("category") }))
+        .into_response()
+}
+
+/// Добавить или переименовать запись словаря. Права: admin/power (ТЗ 6.1).
+async fn upsert_taxonomy(
+    State(st): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Json(req): Json<TaxonomyReq>,
+) -> Response {
+    let Some(me) = current_user(&st, &headers) else {
+        return StatusCode::UNAUTHORIZED.into_response();
+    };
+    if me.status != UserStatus::Active || !matches!(me.role, Role::Admin | Role::Power) {
+        return (StatusCode::FORBIDDEN, "Нет прав на изменение словарей").into_response();
+    }
+    if !valid_kind(&req.kind) {
+        return (StatusCode::BAD_REQUEST, "Можно править только предметы и категории")
+            .into_response();
+    }
+    let name = req.name.trim().to_string();
+    if name.is_empty() {
+        return (StatusCode::BAD_REQUEST, "Пустое название").into_response();
+    }
+    let id = match req.id.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        Some(id) => id.to_string(),
+        None => slug_for(&name),
+    };
+    match st.db.taxonomy_upsert(&req.kind, &id, &name) {
+        Ok(()) => {
+            st.db.log_audit(&me.full_name, "taxonomy", &format!("{}:{id} → {name}", req.kind));
+            (StatusCode::OK, Json(serde_json::json!({ "id": id }))).into_response()
+        }
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
+}
+
+/// Убрать запись словаря. Уже проставленные на книгах теги остаются: они
+/// просто перестают показываться в фильтрах и навигации.
+async fn delete_taxonomy(
+    State(st): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Path((kind, id)): Path<(String, String)>,
+) -> Response {
+    let Some(me) = current_user(&st, &headers) else {
+        return StatusCode::UNAUTHORIZED.into_response();
+    };
+    if me.status != UserStatus::Active || !matches!(me.role, Role::Admin | Role::Power) {
+        return (StatusCode::FORBIDDEN, "Нет прав на изменение словарей").into_response();
+    }
+    if !valid_kind(&kind) {
+        return (StatusCode::BAD_REQUEST, "Можно править только предметы и категории")
+            .into_response();
+    }
+    match st.db.taxonomy_delete(&kind, &id) {
+        Ok(true) => {
+            st.db.log_audit(&me.full_name, "taxonomy_delete", &format!("{kind}:{id}"));
+            StatusCode::NO_CONTENT.into_response()
+        }
+        Ok(false) => StatusCode::NOT_FOUND.into_response(),
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
 }
@@ -1977,6 +2097,17 @@ fn visible_books(st: &AppState, headers: &HeaderMap) -> Vec<db::BookAccess> {
         .collect()
 }
 
+/// Подписи тегов для фидов: сначала словарь школы из БД (его правит админ),
+/// потом встроенный ФГОС-набор. Классы всегда «N класс».
+fn labeller(st: &AppState) -> impl Fn(&str, &str) -> String + use<> {
+    let dict = st.db.taxonomy_labels();
+    move |dim: &str, id: &str| {
+        dict.get(&(dim.to_string(), id.to_string()))
+            .cloned()
+            .unwrap_or_else(|| autotag::label(dim, id))
+    }
+}
+
 /// Записи acquisition-фида из набора доступа: книга + её теги (класс/предмет/
 /// категория), чтобы фид отдавал `<category>` и клиент сохранил теги скачанной
 /// книги.
@@ -2004,7 +2135,7 @@ async fn opds_root(State(st): State<Arc<AppState>>, headers: HeaderMap) -> Respo
 /// Acquisition-фид всех видимых пользователю книг.
 async fn opds_all(State(st): State<Arc<AppState>>, headers: HeaderMap) -> Response {
     let access = visible_books(&st, &headers);
-    opds_response(opds::acquisition_feed(&st.name, &feed_books(&access)))
+    opds_response(opds::acquisition_feed(&st.name, &feed_books(&access), &labeller(&st)))
 }
 
 /// Acquisition-фид «Мои книги» — то, что текущий пользователь загрузил сам.
@@ -2022,6 +2153,7 @@ async fn opds_mine(State(st): State<Arc<AppState>>, headers: HeaderMap) -> Respo
     opds_response(opds::acquisition_feed(
         &format!("{} — Мои книги", st.name),
         &feed_books(&access),
+        &labeller(&st),
     ))
 }
 
@@ -2040,7 +2172,7 @@ async fn opds_search(
 ) -> Response {
     let needle = p.q.trim().to_lowercase();
     if needle.is_empty() {
-        return opds_response(opds::acquisition_feed(&st.name, &[]));
+        return opds_response(opds::acquisition_feed(&st.name, &[], &labeller(&st)));
     }
     let access: Vec<db::BookAccess> = visible_books(&st, &headers)
         .into_iter()
@@ -2050,7 +2182,7 @@ async fn opds_search(
                 || b.author.as_deref().map(|a| a.to_lowercase().contains(&needle)).unwrap_or(false)
         })
         .collect();
-    opds_response(opds::acquisition_feed(&st.name, &feed_books(&access)))
+    opds_response(opds::acquisition_feed(&st.name, &feed_books(&access), &labeller(&st)))
 }
 
 /// Имя колонки тегов BookAccess по имени измерения OPDS.
@@ -2078,7 +2210,7 @@ fn dimension_feed(st: &AppState, headers: &HeaderMap, dim: &str, title: &str) ->
     } else {
         values.sort_by(|a, b| a.0.cmp(&b.0));
     }
-    opds_response(opds::dimension_list(title, dim, &values))
+    opds_response(opds::dimension_list(title, dim, &values, &labeller(st)))
 }
 
 async fn opds_classes(State(st): State<Arc<AppState>>, headers: HeaderMap) -> Response {
@@ -2097,8 +2229,9 @@ fn tag_feed(st: &AppState, headers: &HeaderMap, dim: &str, id: &str) -> Response
         .into_iter()
         .filter(|b| dim_tags(b, dim).iter().any(|v| v == id))
         .collect();
-    let title = format!("{} — {}", st.name, autotag::label(dim, id));
-    opds_response(opds::acquisition_feed(&title, &feed_books(&access)))
+    let label = labeller(st);
+    let title = format!("{} — {}", st.name, label(dim, id));
+    opds_response(opds::acquisition_feed(&title, &feed_books(&access), &label))
 }
 
 async fn opds_by_class(State(st): State<Arc<AppState>>, headers: HeaderMap, Path(id): Path<String>) -> Response {
