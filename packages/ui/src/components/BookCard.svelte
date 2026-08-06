@@ -85,6 +85,14 @@
       <Icon name="book" size={48} />
     {/if}
     <span class="badge">{formatLabel(book.format)}</span>
+    <div class="actions">
+      <button class="act" title={$t('Теги')} onclick={onTagClick} aria-label={$t('Теги книги')}>
+        <Icon name="list" size={18} />
+      </button>
+      <button class="act" title={$t('Удалить')} onclick={onDelete} aria-label={$t('Удалить книгу')}>
+        <Icon name="trash" size={18} />
+      </button>
+    </div>
   </div>
   <div class="meta">
     <p class="title" title={book.title}>{book.title}</p>
@@ -123,14 +131,6 @@
         </button>
       {/if}
     {/if}
-  </div>
-  <div class="actions">
-    <button class="act" title={$t('Теги')} onclick={onTagClick} aria-label={$t('Теги книги')}>
-      <Icon name="list" size={18} />
-    </button>
-    <button class="act" title={$t('Удалить')} onclick={onDelete} aria-label={$t('Удалить книгу')}>
-      <Icon name="trash" size={18} />
-    </button>
   </div>
   {#if (book.classes?.length || book.subjects?.length || book.categories?.length)}
     <div class="tags">
@@ -268,6 +268,25 @@
   .card:hover .actions,
   .card:focus-within .actions {
     opacity: 1;
+  }
+  /*
+   * Тач-устройства: hover'а нет, и кнопки «Теги»/«Удалить» были недостижимы —
+   * тап по карточке открывал книгу. Показываем их всегда, но у НИЖНЕГО края
+   * обложки, чтобы не спорить с меткой класса в правом верхнем углу, и с
+   * пальцевым размером цели.
+   */
+  @media (hover: none) {
+    .actions {
+      opacity: 1;
+      top: auto;
+      bottom: 6px;
+    }
+    .act {
+      padding: 9px;
+    }
+    .card:hover .tags {
+      opacity: 1;
+    }
   }
   .tags {
     position: absolute;

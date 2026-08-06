@@ -132,6 +132,20 @@ export async function saveProgress(
 export type BookTagFields = Pick<BookMeta, Facet>;
 
 /**
+ * Подпись набора тегов (классы/предметы/категории, отсортированы). Совпадение
+ * с `book.serverSynced` означает «опубликованное на сервере = текущее локальное»
+ * — по нему карточка книги решает, показывать «✓ На сервере» или «Обновить».
+ */
+export function tagsSignature(tags: Partial<BookTagFields>): string {
+  const norm = (a?: string[]) => [...(a ?? [])].sort();
+  return JSON.stringify({
+    c: norm(tags.classes),
+    s: norm(tags.subjects),
+    k: norm(tags.categories),
+  });
+}
+
+/**
  * Полностью задать наборы тегов книги (замена значений по измерениям).
  * Передавайте только те измерения, что нужно изменить.
  */
