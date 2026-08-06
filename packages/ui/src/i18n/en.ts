@@ -588,6 +588,41 @@ export const en: Record<string, string> = {
   'Сервер сейчас недоступен. Подключитесь снова.': 'The server is unavailable right now. Connect again.',
   'Не удалось скачать: {0}': 'Failed to download: {0}',
   'Не удалось скачать книгу': 'Failed to download the book',
+  // — Настройки сервера —
+  'Настройки сервера': 'Server settings',
+  'Порт': 'Port',
+  'сейчас: {0}': 'now: {0}',
+  'Код доступа': 'Access code',
+  'пусто — вход без кода': 'empty — no code required',
+  'Порт задан переменной окружения CHITALKA_PORT — при перезапуске она главнее.':
+    'The port is set by the CHITALKA_PORT environment variable — it wins on restart.',
+  'Код задан переменной окружения CHITALKA_TOKEN — при перезапуске она главнее.':
+    'The code is set by the CHITALKA_TOKEN environment variable — it wins on restart.',
+  'Код доступа применяется сразу: устройства с прежним кодом придётся подключить заново.':
+    'The access code applies immediately: devices using the old code must reconnect.',
+  'Сохранено.': 'Saved.',
+  'Сохранено. Новый порт заработает после перезапуска сервера.':
+    'Saved. The new port takes effect after the server restarts.',
+  'Порт должен быть числом от 1024 до 65535': 'The port must be a number between 1024 and 65535',
+  'Порт должен быть 1024 или больше': 'The port must be 1024 or higher',
+  'Не удалось загрузить настройки': 'Failed to load the settings',
+  'Нужны права администратора': 'Administrator rights required',
+  'настройки сервера': 'server settings',
+  'правка словаря': 'dictionary edit',
+  'удаление из словаря': 'dictionary entry removed',
+  'изменены теги книги': 'book tags changed',
+  'книга снята с сервера': 'book removed from server',
+  // — Сводка по школе —
+  'Сводка по школе': 'School overview',
+  'Учеников': 'Students',
+  'Читают': 'Reading',
+  'Средний прогресс': 'Average progress',
+  'Последняя активность': 'Last activity',
+  'Всего': 'Total',
+  'Средний прогресс считается по тем, кто хоть что-то читал.':
+    'Average progress counts only students who have read something.',
+  'Не удалось загрузить сводку': 'Failed to load the overview',
+  'Нет прав на сводку по школе': 'No permission to view the school overview',
   // — Словари школы (таксономия) —
   'Словари школы': 'School dictionaries',
   'Единые для всех устройств: правка появится у всех учителей и учеников после подключения.':

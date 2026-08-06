@@ -58,7 +58,9 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 struct AppState {
     db: Db,
-    token: Option<String>,
+    /// Токен пэйринга. Под RwLock: админ меняет его из интерфейса, и новый
+    /// код должен действовать сразу, без перезапуска сервера.
+    token: std::sync::RwLock<Option<String>>,
     name: String,
     /// Папка библиотеки (для сохранения загружаемых книг).
     library: PathBuf,
@@ -259,6 +261,7 @@ fn build_router(state: Arc<AppState>, web_dir: Option<PathBuf>) -> Router {
         .route("/api/assignments/{id}/report", get(assignment_report))
         // Панель класса: сводный прогресс чтения (учитель своего класса).
         .route("/api/class/{id}/progress", get(class_progress_report))
+        .route("/api/school/progress", get(school_progress_report))
         // Заметки учителя, видимые классу.
         .route("/api/class-notes", get(get_class_notes).post(post_class_note))
         .route("/api/class-notes/{id}", delete(delete_class_note_handler))
@@ -286,6 +289,7 @@ fn build_router(state: Arc<AppState>, web_dir: Option<PathBuf>) -> Router {
         )
         // Уровень логирования сервера (админ): посмотреть/сменить на лету.
         .route("/api/log-level", get(get_log_level).put(put_log_level))
+        .route("/api/server-settings", get(get_server_settings).put(put_server_settings))
         // Журналы клиентов (веб/десктоп/Android). Приём открыт намеренно:
         // клиент падает и до входа в аккаунт, и такие логи нужнее всего.
         // Список и скачивание — только админу.
@@ -406,6 +410,16 @@ pub async fn start(cfg: Config) -> std::io::Result<ServerHandle> {
         Err(e) => tracing::warn!("сканирование библиотеки не удалось: {e}"),
     }
 
+    // Настройки, сохранённые админом из интерфейса. Переменные окружения
+    // главнее: если CHITALKA_PORT/TOKEN заданы явно, они и действуют.
+    let cfg_port = cfg.explicit_port.or_else(|| {
+        db.meta_get("desired_port").and_then(|s| s.trim().parse::<u16>().ok())
+    });
+    let cfg_token = cfg
+        .token
+        .clone()
+        .or_else(|| db.meta_get("pairing_token").filter(|t| !t.is_empty()));
+
     // Словари предметов/категорий: при первом старте сидируем ФГОС-набором,
     // дальше их правит админ (ТЗ 5.3) и клиенты тянут с сервера.
     if let Err(e) = db.seed_taxonomy(&autotag::default_taxonomy()) {
@@ -419,7 +433,7 @@ pub async fn start(cfg: Config) -> std::io::Result<ServerHandle> {
     seed_admin(&db, &cfg.admin_login, &cfg.admin_password);
 
     // Слушатель (с авто-выбором порта) и реальный адрес.
-    let listener = bind_listener(cfg.explicit_port).await;
+    let listener = bind_listener(cfg_port).await;
     let port = listener.local_addr().map(|a| a.port()).unwrap_or(0);
     let address = mdns::local_ipv4().to_string(); // LAN-IP (0.0.0.0 слушает все)
 
@@ -427,7 +441,7 @@ pub async fn start(cfg: Config) -> std::io::Result<ServerHandle> {
     let jwt_secret = db.jwt_secret();
     let state = Arc::new(AppState {
         db,
-        token: cfg.token,
+        token: std::sync::RwLock::new(cfg_token),
         name: cfg.name,
         library: cfg.library.clone(),
         address: address.clone(),
@@ -619,7 +633,7 @@ async fn auth(
     req: Request,
     next: Next,
 ) -> Result<Response, StatusCode> {
-    if let Some(tok) = &st.token {
+    if let Some(tok) = st.token.read().unwrap().clone() {
         let expected = format!("Bearer {tok}");
         let ok = req
             .headers()
@@ -1009,6 +1023,77 @@ async fn upload_book(
         }
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
+}
+
+// --- Настройки сервера: порт и код доступа (ТЗ 6.1, строка «Настройки сервера») ---
+
+/// Новые значения настроек. Поля необязательны: пришло — меняем, нет — как было.
+#[derive(Deserialize)]
+struct ServerSettingsReq {
+    /// Порт для СЛЕДУЮЩЕГО запуска (текущий слушатель уже занят).
+    #[serde(default)]
+    port: Option<u16>,
+    /// Код доступа (пэйринг). Пустая строка — снять требование кода.
+    #[serde(default)]
+    token: Option<String>,
+}
+
+/// Только админ (ТЗ 6.1: настройки сервера — исключительно администратор).
+fn admin_only(st: &AppState, headers: &HeaderMap) -> Result<User, Response> {
+    match current_user(st, headers) {
+        Some(me) if me.status == UserStatus::Active && me.role == Role::Admin => Ok(me),
+        Some(_) => Err((StatusCode::FORBIDDEN, "Нужны права администратора").into_response()),
+        None => Err(StatusCode::UNAUTHORIZED.into_response()),
+    }
+}
+
+/// Текущие настройки сервера. `port` — реально занятый, `desiredPort` — что
+/// применится после перезапуска. `envPort/envToken` — значение задано
+/// переменной окружения: она главнее сохранённой настройки.
+async fn get_server_settings(State(st): State<Arc<AppState>>, headers: HeaderMap) -> Response {
+    if let Err(resp) = admin_only(&st, &headers) {
+        return resp;
+    }
+    Json(serde_json::json!({
+        "port": st.port,
+        "desiredPort": st.db.meta_get("desired_port").and_then(|s| s.parse::<u16>().ok()),
+        "token": st.token.read().unwrap().clone(),
+        "envPort": std::env::var("CHITALKA_PORT").is_ok(),
+        "envToken": std::env::var("CHITALKA_TOKEN").is_ok(),
+    }))
+    .into_response()
+}
+
+/// Изменить настройки. Код доступа применяется сразу (он в состоянии сервера),
+/// порт — только со следующего запуска: переехать на другой порт «на лету»
+/// значило бы оборвать все текущие соединения, включая это.
+async fn put_server_settings(
+    State(st): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Json(req): Json<ServerSettingsReq>,
+) -> Response {
+    let me = match admin_only(&st, &headers) {
+        Ok(u) => u,
+        Err(resp) => return resp,
+    };
+    if let Some(port) = req.port {
+        if port < 1024 {
+            return (StatusCode::BAD_REQUEST, "Порт должен быть 1024 или больше").into_response();
+        }
+        if st.db.meta_set("desired_port", &port.to_string()).is_err() {
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+    }
+    if let Some(token) = req.token {
+        let token = token.trim().to_string();
+        let value = if token.is_empty() { None } else { Some(token) };
+        if st.db.meta_set("pairing_token", value.as_deref().unwrap_or("")).is_err() {
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+        *st.token.write().unwrap() = value;
+    }
+    st.db.log_audit(&me.full_name, "server_settings", "");
+    StatusCode::NO_CONTENT.into_response()
 }
 
 // --- Управляемые словари: предметы и категории (ТЗ 5.3, 6.1) ---
@@ -2284,7 +2369,7 @@ async fn cover(
     // JWT из query → пользователь (для can_see). Не JWT — проверяем пэйринг.
     let user = q.token.as_deref().and_then(|t| user_from_jwt(&st, t));
     if user.is_none() {
-        if let Some(tok) = &st.token {
+        if let Some(tok) = st.token.read().unwrap().clone() {
             if q.token.as_deref() != Some(tok.as_str()) {
                 return StatusCode::UNAUTHORIZED.into_response();
             }
@@ -2658,7 +2743,7 @@ async fn ws_handler(
         Some(u) => Some(u.id),
         None => {
             // Не JWT: если задан код пэйринга — он обязан совпасть.
-            if let Some(tok) = &st.token {
+            if let Some(tok) = st.token.read().unwrap().clone() {
                 if q.token.as_deref() != Some(tok.as_str()) {
                     return StatusCode::UNAUTHORIZED.into_response();
                 }
@@ -2757,6 +2842,54 @@ async fn class_progress_report(
             });
         }
     }
+    Json(rows).into_response()
+}
+
+/// Сводка по школе: строка на класс — сколько учеников, сколько из них вообще
+/// читали, средняя доля прочитанного и когда последний раз открывали книгу.
+/// Права: admin/power («Отчёты: вся школа», ТЗ 6.1). Учителю не даём — у него
+/// есть свой поклассный отчёт по классам, которые он ведёт.
+async fn school_progress_report(State(st): State<Arc<AppState>>, headers: HeaderMap) -> Response {
+    let Some(me) = current_user(&st, &headers) else {
+        return StatusCode::UNAUTHORIZED.into_response();
+    };
+    if me.status != UserStatus::Active || !matches!(me.role, Role::Admin | Role::Power) {
+        return (StatusCode::FORBIDDEN, "Нет прав на сводку по школе").into_response();
+    }
+    let users = st.db.list_users().unwrap_or_default();
+    let students: Vec<&User> = users.iter().filter(|u| u.role == Role::Student).collect();
+
+    // Класс → (учеников, читавших, сумма долей, последняя активность).
+    let mut by_class: std::collections::BTreeMap<String, (i64, i64, f64, i64)> =
+        std::collections::BTreeMap::new();
+    for s in &students {
+        let progress = st.db.user_progress_latest(&s.id).unwrap_or_default();
+        // Ученик может числиться в нескольких классах — учитываем в каждом.
+        for class_id in &s.classes {
+            let e = by_class.entry(class_id.clone()).or_insert((0, 0, 0.0, 0));
+            e.0 += 1;
+            if !progress.is_empty() {
+                e.1 += 1;
+                let sum: f64 = progress.iter().map(|(_, f, _)| *f).sum();
+                e.2 += sum / progress.len() as f64;
+                let last = progress.iter().map(|(_, _, t)| *t).max().unwrap_or(0);
+                e.3 = e.3.max(last);
+            }
+        }
+    }
+    let rows: Vec<serde_json::Value> = by_class
+        .into_iter()
+        .map(|(class_id, (total, active, sum, last))| {
+            serde_json::json!({
+                "classId": class_id,
+                "students": total,
+                "readers": active,
+                // Средняя доля прочитанного по ЧИТАВШИМ ученикам (0..1).
+                "avgFraction": if active > 0 { sum / active as f64 } else { 0.0 },
+                "lastActivity": last,
+            })
+        })
+        .collect();
     Json(rows).into_response()
 }
 

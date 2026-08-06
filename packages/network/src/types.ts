@@ -352,3 +352,30 @@ export interface ServerTaxonomy {
   subjects: TaxonomyEntry[];
   categories: TaxonomyEntry[];
 }
+
+/** Строка сводки по школе: агрегат прогресса по одному классу (ТЗ 6.1). */
+export interface SchoolProgressRow {
+  classId: string;
+  /** Всего учеников в классе. */
+  students: number;
+  /** Из них тех, у кого есть хоть какой-то прогресс чтения. */
+  readers: number;
+  /** Средняя доля прочитанного среди читавших, 0..1. */
+  avgFraction: number;
+  /** Последняя активность по классу (epoch ms; 0 — не читали). */
+  lastActivity: number;
+}
+
+/** Настройки сервера, доступные администратору (ТЗ 6.1). */
+export interface ServerSettings {
+  /** Реально занятый сейчас порт. */
+  port: number;
+  /** Порт, который применится после перезапуска (null — как есть). */
+  desiredPort: number | null;
+  /** Код доступа (пэйринг); null — вход без кода. */
+  token: string | null;
+  /** Порт задан переменной окружения — она главнее настройки. */
+  envPort: boolean;
+  /** Код доступа задан переменной окружения. */
+  envToken: boolean;
+}
