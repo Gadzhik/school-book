@@ -206,22 +206,88 @@ export async function addFiles(files: FileList | File[]): Promise<BookMeta[]> {
   return added;
 }
 
+/** Теги книги, пришедшие из каталога сервера (класс/предмет/категория). */
+export interface ServerBookTags {
+  classes?: string[];
+  subjects?: string[];
+  categories?: string[];
+}
+
+/**
+ * Объединить локальные (авто)теги с тегами сервера — не теряем ни то, ни другое.
+ * Порядок: сначала серверные (они точнее — их выставил учитель), потом свои.
+ */
+function mergeTags(local: string[] | undefined, fromServer: string[] | undefined): string[] {
+  return [...new Set([...(fromServer ?? []), ...(local ?? [])])];
+}
+
+/**
+ * Патч тегов книги по данным сервера. Пустой, если сервер тегов не прислал или
+ * все они у книги уже есть — тогда книгу не переписываем.
+ */
+function tagPatch(book: BookMeta, tags: ServerBookTags | undefined): ServerBookTags {
+  if (!tags) return {};
+  const patch: ServerBookTags = {};
+  for (const dim of ['classes', 'subjects', 'categories'] as const) {
+    const merged = mergeTags(book[dim], tags[dim]);
+    if (merged.length !== (book[dim] ?? []).length) patch[dim] = merged;
+  }
+  return patch;
+}
+
+/**
+ * Подтянуть теги каталога на уже скачанные книги (сопоставление по serverId).
+ * Нужно для копий, скачанных версией без тегов в фиде, и после перетегирования
+ * книги на сервере — иначе фасетный фильтр библиотеки их не находит.
+ */
+export async function syncServerTags(
+  items: Array<{ serverId: string } & ServerBookTags>,
+): Promise<void> {
+  const byId = new Map(items.filter((i) => i.serverId).map((i) => [i.serverId, i]));
+  if (!byId.size) return;
+  let changed = false;
+  for (const book of await listBooks()) {
+    const tags = book.serverId ? byId.get(book.serverId) : undefined;
+    if (!tags) continue;
+    const patch = tagPatch(book, tags);
+    if (!Object.keys(patch).length) continue;
+    await updateBook(book.id, patch);
+    changed = true;
+  }
+  if (changed) await refreshLibrary();
+}
+
 /**
  * Импортировать книгу, скачанную с сервера (Фаза 5): как обычный импорт,
- * плюс сохраняем serverId для синхронизации прогресса между устройствами.
+ * плюс сохраняем serverId для синхронизации прогресса между устройствами и
+ * теги из каталога (класс/предмет/категория) — иначе скачанную книгу не находит
+ * фасетный фильтр библиотеки на этом устройстве.
  */
-export async function importServerBook(file: File, serverId: string): Promise<void> {
+export async function importServerBook(
+  file: File,
+  serverId: string,
+  tags?: ServerBookTags,
+): Promise<void> {
   // Дедуп: если книга с этим serverId уже скачана — не создаём копию.
   // (addBook в ядре каждый раз даёт новый id, иначе повторное скачивание
   // плодило бы дубликаты одной и той же книги.)
+  // Теги при этом всё же подтягиваем: книга могла быть скачана старой версией
+  // (без тегов) или перетегирована на сервере после скачивания.
   if (serverId) {
     const already = (await listBooks()).find((b) => b.serverId === serverId);
-    if (already) return;
+    if (already) {
+      const patch = tagPatch(already, tags);
+      if (Object.keys(patch).length) {
+        await updateBook(already.id, patch);
+        await refreshLibrary();
+      }
+      return;
+    }
   }
   const review: ImportReviewItem[] = [];
   try {
     const res = await importFile(file);
-    await updateBook(res.book.id, { serverId });
+    await updateBook(res.book.id, { serverId, ...tagPatch(res.book, tags) });
     collectReview(res, review);
   } catch (err) {
     log.error('import', 'не удалось импортировать книгу с сервера', {
