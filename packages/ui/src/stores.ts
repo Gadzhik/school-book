@@ -11,9 +11,11 @@ import {
   saveSettings,
   setLlmConfig,
   tagsSignature,
+  applyServerTagDelta,
   DEFAULT_SETTINGS,
   log,
   type BookMeta,
+  type ServerTagSet,
   type ReaderSettings,
 } from '@reader/core';
 import type { ImportResult } from '@reader/converters';
@@ -214,41 +216,52 @@ export interface ServerBookTags {
   categories?: string[];
 }
 
-/**
- * Объединить локальные (авто)теги с тегами сервера — не теряем ни то, ни другое.
- * Порядок: сначала серверные (они точнее — их выставил учитель), потом свои.
- */
-function mergeTags(local: string[] | undefined, fromServer: string[] | undefined): string[] {
-  return [...new Set([...(fromServer ?? []), ...(local ?? [])])];
+/** Полный набор тегов сервера (пустые измерения — тоже значимы). */
+function fullSet(tags: ServerBookTags): ServerTagSet {
+  return {
+    classes: tags.classes ?? [],
+    subjects: tags.subjects ?? [],
+    categories: tags.categories ?? [],
+  };
 }
 
 /**
- * Патч тегов книги по данным сервера. Пустой, если сервер тегов не прислал или
- * всё уже совпадает — тогда книгу не переписываем.
+ * Патч тегов книги по данным каталога. Пустой, если на сервере с прошлой
+ * сверки ничего не менялось — тогда книгу вообще не трогаем, и локальные
+ * правки (в том числе снятые теги) остаются как есть.
  *
- * Если после слияния теги книги в точности равны серверным, ставим и
+ * Если после применения теги книги в точности равны серверным, ставим и
  * `serverSynced`: копия соответствует серверу, и карточка показывает
- * «✓ На сервере», а не вечное «Обновить на сервере» (метку до этого выставляла
- * только публикация с ЭТОГО устройства, поэтому скачанная книга не могла её
- * получить никогда).
+ * «✓ На сервере». Если пользователь тег снял — подписи разойдутся, карточка
+ * предложит «Обновить на сервере», и снятие уедет на сервер по кнопке.
  */
 function tagPatch(book: BookMeta, tags: ServerBookTags | undefined): Partial<BookMeta> {
   if (!tags) return {};
-  const patch: Partial<BookMeta> = {};
-  const merged: ServerBookTags = {};
+  const next = fullSet(tags);
+  // Первая сверка (или копия, скачанная версией без тегов в фиде) — прошлого
+  // состояния нет, поэтому применяем весь набор сервера.
+  const prev: ServerTagSet = book.serverTags ?? { classes: [], subjects: [], categories: [] };
+  if (book.serverTags && tagsSignature(prev) === tagsSignature(next)) return {};
+
+  const sameSet = (a: string[], b: string[] = []) =>
+    a.length === b.length && [...a].sort().join(' ') === [...b].sort().join(' ');
+
+  const patch: Partial<BookMeta> = { serverTags: next };
+  const result: ServerTagSet = { classes: [], subjects: [], categories: [] };
   for (const dim of ['classes', 'subjects', 'categories'] as const) {
-    merged[dim] = mergeTags(book[dim], tags[dim]);
-    if (merged[dim].length !== (book[dim] ?? []).length) patch[dim] = merged[dim];
+    result[dim] = applyServerTagDelta(book[dim], prev[dim], next[dim]);
+    if (!sameSet(result[dim], book[dim])) patch[dim] = result[dim];
   }
-  const sig = tagsSignature(merged);
-  if (sig === tagsSignature(tags) && book.serverSynced !== sig) patch.serverSynced = sig;
+  const sig = tagsSignature(result);
+  if (sig === tagsSignature(next) && book.serverSynced !== sig) patch.serverSynced = sig;
   return patch;
 }
 
 /**
- * Подтянуть теги каталога на уже скачанные книги (сопоставление по serverId).
- * Нужно для копий, скачанных версией без тегов в фиде, и после перетегирования
- * книги на сервере — иначе фасетный фильтр библиотеки их не находит.
+ * Свести теги каталога с уже скачанными книгами (сопоставление по serverId).
+ * Применяются только изменения на сервере: копия, скачанная версией без тегов
+ * в фиде, доберёт теги, перетегирование на сервере доедет, а снятые вручную
+ * теги обратно не вернутся.
  */
 export async function syncServerTags(
   items: Array<{ serverId: string } & ServerBookTags>,

@@ -146,6 +146,32 @@ export function tagsSignature(tags: Partial<BookTagFields>): string {
 }
 
 /**
+ * Применить к локальному набору тегов ТОЛЬКО изменения на сервере с прошлой
+ * сверки: что на сервере появилось — добавить, что исчезло — убрать. Остальное
+ * локальное не трогаем.
+ *
+ * Просто объединять наборы нельзя: снятый вручную тег сервер всё ещё отдаёт, и
+ * при каждой сверке он возвращался бы обратно — тег у книги, лежащей на
+ * сервере, стало бы невозможно удалить.
+ *
+ * @param local текущие теги книги на устройстве
+ * @param prev  что отдавал сервер при прошлой сверке (пусто — сверки не было)
+ * @param next  что сервер отдаёт сейчас
+ */
+export function applyServerTagDelta(
+  local: string[] | undefined,
+  prev: string[] | undefined,
+  next: string[] | undefined,
+): string[] {
+  const was = prev ?? [];
+  const now = next ?? [];
+  const gone = new Set(was.filter((v) => !now.includes(v)));
+  const added = now.filter((v) => !was.includes(v));
+  const kept = (local ?? []).filter((v) => !gone.has(v));
+  return [...new Set([...kept, ...added])];
+}
+
+/**
  * Полностью задать наборы тегов книги (замена значений по измерениям).
  * Передавайте только те измерения, что нужно изменить.
  */
