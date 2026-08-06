@@ -419,3 +419,55 @@ export async function downloadEntry(entry: OpdsEntry): Promise<boolean> {
     });
   }
 }
+
+/** Книги каталога, удаляемые прямо сейчас (по serverId) — для блокировки кнопки. */
+export const deletingServer = writable<Set<string>>(new Set());
+
+/**
+ * Перечитать текущий фид каталога, НЕ сбрасывая стек навигации (в отличие от
+ * `openCatalog`): нужно после удаления книги, чтобы остаться в том же разделе.
+ */
+async function reloadCurrentCatalog(): Promise<void> {
+  const c = client();
+  const path = get(catalogStack).at(-1);
+  if (!c || !path) return;
+  try {
+    const feed = await c.catalog(path);
+    catalog.set(feed);
+    void applyCatalogTags(feed);
+  } catch {
+    /* каталог временно недоступен — оставляем прежний список */
+  }
+}
+
+/**
+ * Удалить книгу С СЕРВЕРА прямо из каталога (ТЗ 6.1: «добавлять/удалять книги»
+ * — admin/power по всей школе, учитель по своим). Права проверяет сервер;
+ * локальная скачанная копия остаётся на устройстве, метка «на сервере» с неё
+ * снимется при ближайшей сверке каталога.
+ */
+export async function deleteServerBook(entry: OpdsEntry): Promise<boolean> {
+  const c = client();
+  const id = serverIdOf(entry);
+  if (!c || !id) return false;
+  deletingServer.update((s) => new Set(s).add(id));
+  connectError.set('');
+  try {
+    await c.deleteBook(id);
+    await reloadCurrentCatalog();
+    void refreshAvailable();
+    void refreshStatus();
+    return true;
+  } catch (e) {
+    connectError.set(
+      e instanceof Error ? tr('Не удалось удалить: {0}', tr(e.message)) : tr('Не удалось удалить книгу'),
+    );
+    return false;
+  } finally {
+    deletingServer.update((s) => {
+      const n = new Set(s);
+      n.delete(id);
+      return n;
+    });
+  }
+}
