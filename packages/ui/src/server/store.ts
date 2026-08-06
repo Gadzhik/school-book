@@ -16,6 +16,7 @@ import {
   type UpdateInfo,
 } from '@reader/network';
 import { log, updateBook } from '@reader/core';
+import { session } from './auth';
 import { importServerBook, syncServerTags, books, refreshLibrary } from '../stores';
 import { tr } from '../i18n';
 
@@ -260,16 +261,24 @@ export async function refreshAvailable(): Promise<void> {
  * Сверить локальные метки «на сервере» с реальным каталогом. Книги могли
  * удалить с сервера (или метки остались с эпохи автопубликации при импорте,
  * до 2026-07-02) — тогда serverId/serverSynced зависают навсегда и карточки
- * врут «✓ На сервере». Чистим метку у книг, опубликованных этим аккаунтом
- * (serverSynced задан: владелец всегда видит свои книги в каталоге), только
- * под JWT — анонимный каталог показывает лишь «доступные всем», по нему судить
- * о существовании книги нельзя.
+ * врут «✓ На сервере». Работает только под JWT: анонимный каталог показывает
+ * лишь «доступные всем», по нему судить о существовании книги нельзя.
+ *
+ * Кого чистим:
+ * - admin/power видят ВЕСЬ каталог, поэтому «нет в фиде» = «удалена», и метку
+ *   снимаем с любой книги (иначе после удаления книги другим устройством
+ *   карточка вечно врала «✓ На сервере»);
+ * - у остальных ролей отсутствие книги может значить «перестала быть видна
+ *   мне» (сменили класс/предмет), поэтому чистим только то, что это
+ *   устройство само публиковало или сверяло (есть serverSynced).
  */
 async function reconcilePublished(feed: OpdsFeed): Promise<void> {
   if (!get(authToken)) return;
+  const role = get(session)?.user.role;
+  const seesWholeCatalog = role === 'admin' || role === 'power';
   const onServer = new Set(feed.entries.map((e) => serverIdOf(e)));
   const stale = get(books).filter(
-    (b) => b.serverId && b.serverSynced && !onServer.has(b.serverId),
+    (b) => b.serverId && (seesWholeCatalog || b.serverSynced) && !onServer.has(b.serverId),
   );
   if (!stale.length) return;
   for (const b of stale) {
@@ -334,6 +343,21 @@ export async function refreshStatus(): Promise<void> {
   } catch {
     /* офлайн — оставляем прежний статус */
   }
+}
+
+/**
+ * Полностью пересверить состояние с сервером: статус, текущий фид каталога и
+ * список доступных книг (внутри — сверка локальных меток «на сервере»).
+ *
+ * Нужно потому, что книги могли удалить/добавить с ДРУГОГО устройства: без
+ * такой сверки каталог показывал удалённую книгу, а карточка в библиотеке
+ * продолжала уверять «✓ На сервере». Раньше кнопка «Обновить» перечитывала
+ * только фид, а «Обновить статус» — только профиль пользователя.
+ */
+export async function refreshServerState(): Promise<void> {
+  await refreshStatus();
+  await reloadCurrentCatalog();
+  await refreshAvailable();
 }
 
 /** Поиск книг в каталоге по названию/автору. Пустой запрос → корневой каталог. */
@@ -437,8 +461,8 @@ export const deletingServer = writable<Set<string>>(new Set());
  */
 async function reloadCurrentCatalog(): Promise<void> {
   const c = client();
-  const path = get(catalogStack).at(-1);
-  if (!c || !path) return;
+  const path = get(catalogStack).at(-1) ?? '/opds/all';
+  if (!c) return;
   try {
     const feed = await c.catalog(path);
     catalog.set(feed);
