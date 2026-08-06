@@ -2,6 +2,7 @@
 //! нагрузка LAN-сервера невелика, держим блокировку коротко (без .await внутри).
 
 use std::collections::hash_map::DefaultHasher;
+use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -196,6 +197,15 @@ impl Db {
                  answers TEXT NOT NULL,
                  updated_at INTEGER NOT NULL,
                  PRIMARY KEY (quiz_id, user_id)
+             );
+             -- Управляемые словари школы (ТЗ 5.2/5.3, 6.1): предметы и
+             -- категории. Классы 1–11 структурны (по ним RBAC и привязка
+             -- пользователей) и здесь не хранятся.
+             CREATE TABLE IF NOT EXISTS taxonomy (
+                 kind TEXT NOT NULL,
+                 id TEXT NOT NULL,
+                 name TEXT NOT NULL,
+                 PRIMARY KEY (kind, id)
              );",
         )?;
         // Миграция старой БД: добавляем колонки тегов, если их нет (ошибку
@@ -599,6 +609,61 @@ impl Db {
             params![secret],
         );
         secret
+    }
+
+    // --- Управляемые словари: предметы и категории (ТЗ 5.3, 6.1) ---
+
+    /// Заполнить словари базовым ФГОС-набором, если таблица пуста. Вызывается
+    /// на старте: школа сразу видит стандартные предметы, дальше админ правит.
+    pub fn seed_taxonomy(&self, entries: &[(&str, &str, &str)]) -> rusqlite::Result<()> {
+        let conn = self.conn.lock().unwrap();
+        let n: i64 = conn.query_row("SELECT COUNT(*) FROM taxonomy", [], |r| r.get(0))?;
+        if n > 0 {
+            return Ok(());
+        }
+        for (kind, id, name) in entries {
+            conn.execute(
+                "INSERT OR IGNORE INTO taxonomy (kind,id,name) VALUES (?1,?2,?3)",
+                params![kind, id, name],
+            )?;
+        }
+        Ok(())
+    }
+
+    /// Все записи словарей: (kind, id, name), отсортированы по названию.
+    pub fn taxonomy_all(&self) -> rusqlite::Result<Vec<(String, String, String)>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn
+            .prepare("SELECT kind,id,name FROM taxonomy ORDER BY kind, name COLLATE NOCASE")?;
+        let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
+        rows.collect()
+    }
+
+    /// Добавить или переименовать запись словаря.
+    pub fn taxonomy_upsert(&self, kind: &str, id: &str, name: &str) -> rusqlite::Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO taxonomy (kind,id,name) VALUES (?1,?2,?3)
+             ON CONFLICT(kind,id) DO UPDATE SET name=excluded.name",
+            params![kind, id, name],
+        )?;
+        Ok(())
+    }
+
+    /// Убрать запись словаря. true — что-то удалили.
+    pub fn taxonomy_delete(&self, kind: &str, id: &str) -> rusqlite::Result<bool> {
+        let conn = self.conn.lock().unwrap();
+        let n = conn.execute("DELETE FROM taxonomy WHERE kind=?1 AND id=?2", params![kind, id])?;
+        Ok(n > 0)
+    }
+
+    /// Подписи словарей как (kind, id) → название — для OPDS-навигации.
+    pub fn taxonomy_labels(&self) -> HashMap<(String, String), String> {
+        self.taxonomy_all()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|(kind, id, name)| ((kind, id), name))
+            .collect()
     }
 
     /// Прочитать значение из meta-таблицы (настройки сервера, ключ-значение).

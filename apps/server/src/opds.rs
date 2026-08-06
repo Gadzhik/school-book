@@ -44,14 +44,18 @@ fn scheme_for(dim: &str) -> String {
     format!("urn:chitalka:{dim}")
 }
 
+/// Как получить подпись тега: словарь школы из БД, с фолбэком на встроенный
+/// набор. Передаётся снаружи, чтобы этот модуль не лез в состояние сервера.
+pub type LabelFn<'a> = &'a dyn Fn(&str, &str) -> String;
+
 /// Вывести `<category>` для одного измерения книги.
-fn categories_of(s: &mut String, dim: &str, values: &[String]) {
+fn categories_of(s: &mut String, dim: &str, values: &[String], label: LabelFn<'_>) {
     for v in values {
         s.push_str(&format!(
             r#"<category scheme="{}" term="{}" label="{}"/>"#,
             esc(&scheme_for(dim)),
             esc(v),
-            esc(&crate::autotag::label(dim, v))
+            esc(&label(dim, v))
         ));
     }
 }
@@ -93,11 +97,11 @@ pub fn navigation_root(server_name: &str, show_mine: bool) -> String {
 
 /// Навигационный фид со значениями измерения (классы/предметы/категории).
 /// dim ∈ {"class","subject","category"}; values — (id, число книг).
-pub fn dimension_list(title: &str, dim: &str, values: &[(String, i64)]) -> String {
+pub fn dimension_list(title: &str, dim: &str, values: &[(String, i64)], label: LabelFn<'_>) -> String {
     let mut s = String::new();
     feed_head(&mut s, title, &format!("/opds/{dim}s"));
     for (id, count) in values {
-        let label = crate::autotag::label(dim, id);
+        let label = label(dim, id);
         nav_entry(
             &mut s,
             &format!("{label} ({count})"),
@@ -110,7 +114,7 @@ pub fn dimension_list(title: &str, dim: &str, values: &[(String, i64)]) -> Strin
 }
 
 /// Корневой acquisition-фид: все книги каталога со ссылками на скачивание.
-pub fn acquisition_feed(server_name: &str, books: &[FeedBook<'_>]) -> String {
+pub fn acquisition_feed(server_name: &str, books: &[FeedBook<'_>], label: LabelFn<'_>) -> String {
     let mut s = String::new();
     s.push_str(r#"<?xml version="1.0" encoding="UTF-8"?>"#);
     s.push_str(
@@ -131,9 +135,9 @@ pub fn acquisition_feed(server_name: &str, books: &[FeedBook<'_>]) -> String {
             s.push_str(&format!("<author><name>{}</name></author>", esc(author)));
         }
         // Теги книги — чтобы скачавшее устройство сохранило класс/предмет.
-        categories_of(&mut s, "class", fb.classes);
-        categories_of(&mut s, "subject", fb.subjects);
-        categories_of(&mut s, "category", fb.categories);
+        categories_of(&mut s, "class", fb.classes, label);
+        categories_of(&mut s, "subject", fb.subjects, label);
+        categories_of(&mut s, "category", fb.categories, label);
         s.push_str(&format!(
             r#"<link rel="http://opds-spec.org/acquisition" href="/books/{}/file" type="{}"/>"#,
             esc(&b.id),
@@ -183,6 +187,7 @@ mod tests {
         let xml = acquisition_feed(
             "Сервер",
             &[FeedBook { book: &b, classes: &classes, subjects: &subjects, categories: &none }],
+            &crate::autotag::label,
         );
         assert!(xml.contains(r#"<category scheme="urn:chitalka:class" term="9""#), "{xml}");
         assert!(
@@ -200,6 +205,7 @@ mod tests {
         let xml = acquisition_feed(
             "Сервер",
             &[FeedBook { book: &b, classes: &none, subjects: &none, categories: &none }],
+            &crate::autotag::label,
         );
         assert!(!xml.contains("<category"), "{xml}");
     }

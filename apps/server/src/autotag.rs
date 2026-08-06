@@ -157,7 +157,7 @@ pub fn suggest(file_name: &str, title: &str, keywords: &[String], fb2_genres: &[
 
 const SUBJECT_LABELS: &[(&str, &str)] = &[
     ("russian", "Русский язык"),
-    ("literature", "Литература"),
+    ("literature", "Литература (Литературное чтение)"),
     ("math", "Математика"),
     ("algebra", "Алгебра"),
     ("geometry", "Геометрия"),
@@ -190,6 +190,16 @@ const CATEGORY_LABELS: &[(&str, &str)] = &[
     ("comic", "Комикс"),
     ("extracurricular", "Внеклассное чтение"),
 ];
+
+/// Базовый набор словарей для первого запуска: (kind, id, name).
+/// Классы сюда не входят — они структурны (1–11) и не редактируются.
+pub fn default_taxonomy() -> Vec<(&'static str, &'static str, &'static str)> {
+    SUBJECT_LABELS
+        .iter()
+        .map(|(id, name)| ("subject", *id, *name))
+        .chain(CATEGORY_LABELS.iter().map(|(id, name)| ("category", *id, *name)))
+        .collect()
+}
 
 /// Подпись измерения по id (классы — «N класс», иначе из словаря; фолбэк — id).
 pub fn label(dimension: &str, id: &str) -> String {
