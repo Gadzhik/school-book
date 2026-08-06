@@ -6,12 +6,23 @@
   import { loadTaxonomy, filteredBooks, filterActive } from '../classification';
   import { dueCount, refreshWords } from '../words/store';
   import { session, logout } from '../server/auth';
-  import { availableCount, refreshAvailable } from '../server/store';
+  import { availableCount, refreshAvailable, openAdminSection } from '../server/store';
   import { t } from '../i18n';
 
   // Управление книгами (добавить/сканировать) — не для ученика (ТЗ 6.1).
   const role = $derived($session?.user.role);
   const canManageBooks = $derived(role === 'teacher' || role === 'admin' || role === 'power');
+  // Управление школой (люди, словари, сервер, отчёты) — для тех, у кого есть
+  // хоть один такой инструмент. Раньше вход был только через «Сетевую
+  // библиотеку» → «Журнал», и админ его не находил.
+  const canManageSchool = $derived(
+    role === 'admin' || role === 'power' || role === 'teacher',
+  );
+
+  function openAdmin() {
+    openAdminSection.set(true);
+    view.set({ name: 'server' });
+  }
   const ROLE_LABEL: Record<string, string> = {
     admin: 'Администратор',
     power: 'Старший пользователь',
@@ -74,6 +85,12 @@
         {$t('Сетевая библиотека')}
         {#if $availableCount > 0}<span class="badge">{$availableCount}</span>{/if}
       </button>
+      {#if canManageSchool}
+        <button class="words-btn manage-btn" onclick={openAdmin}>
+          <Icon name="list" size={18} />
+          {$t('Управление')}
+        </button>
+      {/if}
       {#if canManageBooks}
         <button class="scan-btn" onclick={() => startScanner()}>
           <Icon name="plus" size={20} />
@@ -186,6 +203,10 @@
     font-weight: 600;
     cursor: pointer;
     white-space: nowrap;
+  }
+  .manage-btn {
+    border-color: var(--accent);
+    color: var(--accent);
   }
   .words-btn .badge {
     min-width: 1.3rem;
