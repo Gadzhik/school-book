@@ -340,7 +340,10 @@ export class LibraryServerClient {
         classes: tags.classes ?? [],
         subjects: tags.subjects ?? [],
         categories: tags.categories ?? [],
-        public: tags.public ?? false,
+        // Флаг «доступна всем» шлём, ТОЛЬКО если вызывающий его задал: сервер
+        // без этого поля оставляет текущее значение. Иначе правка тегов молча
+        // снимала бы книгу с общего доступа.
+        ...(tags.public === undefined ? {} : { public: tags.public }),
       }),
     });
   }

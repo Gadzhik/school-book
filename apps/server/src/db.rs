@@ -380,24 +380,6 @@ impl Db {
         Ok(())
     }
 
-    /// Обновить теги/доступ книги (публикация локальной книги на сервер с уже
-    /// проставленными тегами — без повторной загрузки файла). true — обновлено.
-    /// Владелец книги (owner_id загрузившего). Ok(None) — книги нет;
-    /// Ok(Some(None)) — книга без владельца (положена в папку напрямую).
-    pub fn book_owner(&self, id: &str) -> rusqlite::Result<Option<Option<String>>> {
-        let conn = self.conn.lock().unwrap();
-        let r = conn.query_row(
-            "SELECT owner_id FROM books WHERE id=?1",
-            params![id],
-            |r| r.get::<_, Option<String>>(0),
-        );
-        match r {
-            Ok(o) => Ok(Some(o)),
-            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
-            Err(e) => Err(e),
-        }
-    }
-
     /// Путь к файлу и владелец книги (для снятия с публикации).
     pub fn book_path_owner(&self, id: &str) -> rusqlite::Result<Option<(String, Option<String>)>> {
         let conn = self.conn.lock().unwrap();
@@ -420,6 +402,8 @@ impl Db {
         Ok(n > 0)
     }
 
+    /// Обновить теги/доступ книги (публикация локальной книги на сервер с уже
+    /// проставленными тегами — без повторной загрузки файла). true — обновлено.
     pub fn update_book_tags(
         &self,
         id: &str,

@@ -1010,8 +1010,11 @@ struct BookTagsReq {
     subjects: Vec<String>,
     #[serde(default)]
     categories: Vec<String>,
+    /// «Доступна всем». Поле НЕОБЯЗАТЕЛЬНОЕ: если клиент его не прислал, флаг
+    /// сохраняется как был. Раньше здесь стоял `#[serde(default)]` на `bool`,
+    /// и любая правка тегов молча снимала книгу с общего доступа.
     #[serde(default)]
-    public: bool,
+    public: Option<bool>,
 }
 
 /// Обновить теги/доступ уже загруженной книги (ТЗ 6.5). Права admin/power/
@@ -1032,16 +1035,18 @@ async fn update_book_tags(
     }
     let mut classes = req.classes;
     let mut subjects = req.subjects;
+    // Текущее состояние книги нужно и для проверки владельца, и чтобы сохранить
+    // флаг «доступна всем», если клиент его не прислал.
+    let current = match st.db.book_access_by_id(&id) {
+        Ok(Some(b)) => b,
+        Ok(None) => return StatusCode::NOT_FOUND.into_response(),
+        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    };
     if me.role == Role::Teacher {
         // Учитель правит только СВОИ загруженные книги — иначе мог бы скрыть/
         // опубликовать/перетегировать чужие (admin/power — любые).
-        match st.db.book_owner(&id) {
-            Ok(Some(owner)) if owner.as_deref() == Some(me.id.as_str()) => {}
-            Ok(Some(_)) => {
-                return (StatusCode::FORBIDDEN, "Можно менять только свои книги").into_response()
-            }
-            Ok(None) => return StatusCode::NOT_FOUND.into_response(),
-            Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+        if current.owner_id.as_deref() != Some(me.id.as_str()) {
+            return (StatusCode::FORBIDDEN, "Можно менять только свои книги").into_response();
         }
         classes.retain(|c| me.classes.contains(c));
         subjects.retain(|s| me.subjects.contains(s));
@@ -1051,7 +1056,7 @@ async fn update_book_tags(
         &classes.join(","),
         &subjects.join(","),
         &req.categories.join(","),
-        req.public,
+        req.public.unwrap_or(current.public),
     ) {
         Ok(true) => {
             st.db.log_audit(&me.full_name, "retag", &id);
