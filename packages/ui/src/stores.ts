@@ -10,6 +10,7 @@ import {
   loadSettings,
   saveSettings,
   setLlmConfig,
+  tagsSignature,
   DEFAULT_SETTINGS,
   log,
   type BookMeta,
@@ -223,15 +224,24 @@ function mergeTags(local: string[] | undefined, fromServer: string[] | undefined
 
 /**
  * Патч тегов книги по данным сервера. Пустой, если сервер тегов не прислал или
- * все они у книги уже есть — тогда книгу не переписываем.
+ * всё уже совпадает — тогда книгу не переписываем.
+ *
+ * Если после слияния теги книги в точности равны серверным, ставим и
+ * `serverSynced`: копия соответствует серверу, и карточка показывает
+ * «✓ На сервере», а не вечное «Обновить на сервере» (метку до этого выставляла
+ * только публикация с ЭТОГО устройства, поэтому скачанная книга не могла её
+ * получить никогда).
  */
-function tagPatch(book: BookMeta, tags: ServerBookTags | undefined): ServerBookTags {
+function tagPatch(book: BookMeta, tags: ServerBookTags | undefined): Partial<BookMeta> {
   if (!tags) return {};
-  const patch: ServerBookTags = {};
+  const patch: Partial<BookMeta> = {};
+  const merged: ServerBookTags = {};
   for (const dim of ['classes', 'subjects', 'categories'] as const) {
-    const merged = mergeTags(book[dim], tags[dim]);
-    if (merged.length !== (book[dim] ?? []).length) patch[dim] = merged;
+    merged[dim] = mergeTags(book[dim], tags[dim]);
+    if (merged[dim].length !== (book[dim] ?? []).length) patch[dim] = merged[dim];
   }
+  const sig = tagsSignature(merged);
+  if (sig === tagsSignature(tags) && book.serverSynced !== sig) patch.serverSynced = sig;
   return patch;
 }
 

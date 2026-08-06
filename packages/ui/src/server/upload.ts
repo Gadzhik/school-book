@@ -4,7 +4,11 @@
  */
 import { writable, get } from 'svelte/store';
 import { HttpError, type Role } from '@reader/network';
-import { getBookFile, updateBook, type BookMeta } from '@reader/core';
+import { getBookFile, tagsSignature, updateBook, type BookMeta } from '@reader/core';
+
+// Подпись тегов живёт в ядре (её же считает импорт книг с сервера); здесь —
+// реэкспорт, чтобы не менять импорты в карточке книги.
+export { tagsSignature };
 import { authedClient, session } from './auth';
 import { openCatalog, refreshAvailable, refreshStatus } from './store';
 import { refreshLibrary } from '../stores';
@@ -35,19 +39,6 @@ export interface UploadMeta {
  * serverId. Так «Добавить книгу» и правка тегов на главной доезжают до сервера,
  * и ученики класса сразу видят книгу. true — успех.
  */
-/**
- * Подпись тегов книги (классы/предметы/категории, отсортированы). Совпадение с
- * `book.serverSynced` означает «опубликованное на сервере = текущее локальное».
- */
-export function tagsSignature(book: BookMeta): string {
-  const norm = (a?: string[]) => [...(a ?? [])].sort();
-  return JSON.stringify({
-    c: norm(book.classes),
-    s: norm(book.subjects),
-    k: norm(book.categories),
-  });
-}
-
 export async function publishToServer(book: BookMeta): Promise<boolean> {
   const c = authedClient();
   if (!c || !canUpload(get(session)?.user.role)) return false;
